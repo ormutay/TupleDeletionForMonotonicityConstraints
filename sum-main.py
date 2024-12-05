@@ -79,7 +79,6 @@ def greedy_algorithm(df, agg_func):
             print("No violations remain. Algorithm completed.")
             break
 
-
         max_impact = None
         for _, row in grouped_df[grouped_df["MVI"] > 0].iterrows():
             group = row["A"]
@@ -89,10 +88,22 @@ def greedy_algorithm(df, agg_func):
                 max_impact = best_impact
 
         if max_impact is None or max_impact[2] <= 0:
-            print("No positive impact available. Exiting loop.")
-            break
+            # No positive impacts available: fallback to largest non-positive impact
+            print("No positive impact available. Continuing with largest non-positive impact.")
+            max_impact = None
+            for _, row in grouped_df[grouped_df["MVI"] > 0].iterrows():
+                group = row["A"]
+                impacts = find_tuple_removal_impact(sorted_df, grouped_df, group, agg_func)
+                fallback_impact = max(impacts, key=lambda x: x[2])  # Largest impact (may be ≤ 0)
+                if max_impact is None or fallback_impact[2] > max_impact[2]:
+                    max_impact = fallback_impact
 
-        # Remove the tuple with the highest impact
+            # If still no valid impacts, terminate the loop
+            if max_impact is None:
+                print("No valid impacts found. Stopping.")
+                break
+
+        # Remove the tuple with the largest impact (positive or fallback)
         sorted_df = sorted_df.drop(index=max_impact[0]).reset_index(drop=True)
         print(f"Removed tuple ({sorted_df.loc[max_impact[0], 'A']}, {max_impact[1]}) with impact {max_impact[2]}")
         iteration += 1
