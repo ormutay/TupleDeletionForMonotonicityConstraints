@@ -1,142 +1,162 @@
 import os
+import pandas as pd
 import subprocess
 import time
-import pandas as pd
+from concurrent.futures import ProcessPoolExecutor, as_completed
 import matplotlib.pyplot as plt
 
+# Function to run an algorithm and measure rows removed and execution time
 def run_algorithm(command, is_external=False):
-    """
-    Run an algorithm as a subprocess and measure its time and rows removed.
-
-    Args:
-        command (list): The command to execute the algorithm.
-        is_external (bool): Whether the algorithm is external (handles output parsing differently).
-
-    Returns:
-        dict: A dictionary with execution time and rows removed.
-    """
     start_time = time.time()
-    result = subprocess.run(command, stdout=subprocess.PIPE, text=True)
-    end_time = time.time()
+    try:
+        result = subprocess.run(command, stdout=subprocess.PIPE, text=True, timeout=600)  # second timeout
+        end_time = time.time()
+        execution_time = end_time - start_time
 
-    execution_time = end_time - start_time
-    rows_removed = 0
+        rows_removed = None
+        if is_external:
+            # External algorithm: parse "The removed tuples are:" section
+            output_lines = result.stdout.splitlines()
+            in_removed_section = False
+            rows_removed = 0
+            for line in output_lines:
+                if "The removed tuples are:" in line:
+                    in_removed_section = True
+                    continue
+                if in_removed_section:
+                    if line.strip() == "":  # End of section
+                        break
+                    rows_removed += 1  # Count each row in the removed tuples section
+        else:
+            # My algorithm: parse "Total tuple removals"
+            for line in result.stdout.splitlines():
+                if "Total tuple removals" in line:
+                    rows_removed = int(float(line.split(":")[-1].strip()))
 
-    if is_external:
-        # For the external algorithm, parse the "The removed tuples are:" section
-        output_lines = result.stdout.splitlines()
-        in_removed_section = False
-        for line in output_lines:
-            if "The removed tuples are:" in line:
-                in_removed_section = True
-                continue
-            if in_removed_section:
-                if line.strip() == "":  # End of section
-                    break
-                rows_removed += 1  # Count each row in the removed tuples section
-    else:
-        # For my algorithm, parse "Total tuple removals"
-        for line in result.stdout.splitlines():
-            if "Total tuple removals" in line:
-                rows_removed = int(float(line.split(":")[-1].strip()))
+        return {"time": execution_time, "rows_removed": rows_removed}
 
-    return {"time": execution_time, "rows_removed": rows_removed}
+    except subprocess.TimeoutExpired:
+        print(f"Command timed out: {' '.join(command)}")
+        return {"time": None, "rows_removed": None}  # Return None for timeout
 
+# Helper function to process a single dataset
+def process_single_dataset(dataset_path, my_algo_path, external_algo_path):
+    print(f"Processing dataset: {dataset_path}")
+    filename = os.path.basename(dataset_path)
 
+    # Extract parameters from filename
+    num_rows = int(filename.split("_")[3][1:])
+    num_groups = int(filename.split("_")[2][1:]) if "_g" in filename else None
+    violation_percentage = int(filename.split("_")[4][1:]) if "_v" in filename else None
+    index = int(filename.split("_")[-1].split(".")[0])  # Extract index from filename
 
-def create_line_plots(results, output_folder):
-    """
-    Create line plots for rows removed and execution time.
+    # Run my algorithm
+    my_command = ["python", my_algo_path, dataset_path]
+    my_results = run_algorithm(my_command)
 
-    Args:
-        results (list): List of dictionaries containing performance metrics for each dataset.
-        output_folder (str): Folder to save the line plots.
-    """
-    # Ensure the results folder exists
-    if not os.path.exists(output_folder):
-        os.makedirs(output_folder)
+    # Run external algorithm
+    external_command = ["python", external_algo_path, "MAX", dataset_path, "B", "A"]
+    external_results = run_algorithm(external_command, is_external=True)
 
-    datasets = [result["dataset"] for result in results]
-    rows_removed_my_algo = [result["My Algorithm"]["rows_removed"] for result in results]
-    rows_removed_ext_algo = [result["External Algorithm"]["rows_removed"] for result in results]
-    time_my_algo = [result["My Algorithm"]["time"] for result in results]
-    time_ext_algo = [result["External Algorithm"]["time"] for result in results]
+    return {
+        "dataset": filename,
+        "num_rows": num_rows,
+        "num_groups": num_groups,
+        "violation_percentage": violation_percentage,
+        "index": index,
+        "my_time": my_results["time"],
+        "my_rows_removed": my_results["rows_removed"],
+        "external_time": external_results["time"],
+        "external_rows_removed": external_results["rows_removed"],
+    }
 
-    # Line plot for rows removed
+# Function to process datasets in parallel
+def process_datasets_parallel(dataset_folder, my_algo_path, external_algo_path):
+    print("Collecting datasets...")
+    dataset_paths = [
+        os.path.join(dataset_folder, f) for f in os.listdir(dataset_folder) if f.endswith(".csv")
+    ]
+    results = []
+
+    print(f"Found {len(dataset_paths)} datasets. Processing in parallel...")
+    with ProcessPoolExecutor() as executor:
+        future_to_dataset = {
+            executor.submit(process_single_dataset, dataset, my_algo_path, external_algo_path): dataset
+            for dataset in dataset_paths
+        }
+        for future in as_completed(future_to_dataset):
+            try:
+                results.append(future.result())
+            except Exception as e:
+                print(f"Error processing dataset {future_to_dataset[future]}: {e}")
+
+    return pd.DataFrame(results)
+
+# Function to plot results based on different x-axes
+def plot_results(results, output_folder, x_axis, x_label):
+    print(f"Preparing data for plots with {x_axis} as x-axis...")
+
+    # Ensure numeric data for aggregation
+    numeric_columns = ["num_rows", "num_groups", "violation_percentage", "my_rows_removed", "external_rows_removed", "my_time", "external_time"]
+    results = results[numeric_columns].dropna(subset=[x_axis])
+
+    # Group by the specified x-axis and calculate the mean
+    grouped = results.groupby(x_axis).mean()
+
+    # Plot 1: Rows removed vs. x_axis
     plt.figure(figsize=(10, 6))
-    plt.plot(datasets, rows_removed_my_algo, marker="o", label="My Algorithm")
-    plt.plot(datasets, rows_removed_ext_algo, marker="o", label="External Algorithm")
-    plt.xlabel("Dataset", fontsize=14)
-    plt.ylabel("Rows Removed", fontsize=14)
-    plt.title("Rows Removed Comparison", fontsize=16)
-    plt.legend(fontsize=12)
-    plt.grid(True, linestyle="--", alpha=0.7)
-    plt.tight_layout()
-    plt.savefig(os.path.join(output_folder, "rows_removed_comparison.png"))
-    plt.close()
+    plt.plot(grouped.index, grouped["my_rows_removed"], marker='o', label="My Algorithm")
+    plt.plot(grouped.index, grouped["external_rows_removed"], marker='o', label="External Algorithm")
+    plt.xlabel(x_label)
+    plt.ylabel("Mean Rows Removed")
+    plt.title(f"Rows Removed by Algorithms ({x_label})")
+    plt.legend()
+    plt.grid(True)
+    plt.savefig(os.path.join(output_folder, f"rows_removed_comparison_{x_axis}.png"))
+    plt.show()
 
-    # Line plot for execution time
+    # Plot 2: Execution time vs. x_axis
     plt.figure(figsize=(10, 6))
-    plt.plot(datasets, time_my_algo, marker="o", label="My Algorithm")
-    plt.plot(datasets, time_ext_algo, marker="o", label="External Algorithm")
-    plt.xlabel("Dataset", fontsize=14)
-    plt.ylabel("Execution Time (s)", fontsize=14)
-    plt.title("Execution Time Comparison", fontsize=16)
-    plt.legend(fontsize=12)
-    plt.grid(True, linestyle="--", alpha=0.7)
-    plt.tight_layout()
-    plt.savefig(os.path.join(output_folder, "execution_time_comparison.png"))
-    plt.close()
+    plt.plot(grouped.index, grouped["my_time"], marker='o', label="My Algorithm")
+    plt.plot(grouped.index, grouped["external_time"], marker='o', label="External Algorithm")
+    plt.xlabel(x_label)
+    plt.ylabel("Mean Execution Time (seconds)")
+    plt.title(f"Execution Time of Algorithms ({x_label})")
+    plt.legend()
+    plt.grid(True)
+    plt.savefig(os.path.join(output_folder, f"execution_time_comparison_{x_axis}.png"))
+    plt.show()
 
-
+# Main script
 if __name__ == "__main__":
-    # Inputs
-    dataset_folder = "dataset-sum"  # Folder containing the datasets
-    aggregation_function = "SUM"  # Options: "MAX", "SUM"
-    column_to_aggregate = "B"
-    grouping_column = "A"
-    output_folder = "results-sum"
+    base_folder = "dataset-max-w6"
+    my_algo_path = "max-main.py"
+    external_algo_path = "Trendline-Outlier-Detection/main.py"
+    output_folders = {
+        "rows": "results-w6/rows",
+        "groups": "results-w6/groups",
+        "violations": "results-w6/violations"
+    }
 
-    # Initialize results
-    all_results = []
+    for folder, output_folder in output_folders.items():
+        dataset_folder = os.path.join(base_folder, folder)
+        if not os.path.exists(output_folder):
+            os.makedirs(output_folder)
 
-    # Iterate over all datasets in the folder
-    for dataset_file in sorted(os.listdir(dataset_folder)):
-        if dataset_file.endswith(".csv"):
-            dataset_path = os.path.join(dataset_folder, dataset_file)
-            print(f"\nProcessing dataset: {dataset_file}")
+        print(f"Starting dataset processing for {folder}...")
+        results = process_datasets_parallel(dataset_folder, my_algo_path, external_algo_path)
 
-            # Commands for both algorithms
-            my_algorithm_command = ["python", f"{aggregation_function.lower()}-main.py", dataset_path]
-            other_algorithm_command = [
-                "python", "Trendline-Outlier-Detection/main.py", aggregation_function, dataset_path,
-                column_to_aggregate, grouping_column
-            ]
+        # Save results to a CSV file
+        results_csv = os.path.join(output_folder, "comparison_results.csv")
+        results.to_csv(results_csv, index=False)
+        print(f"Results saved to {results_csv}")
 
-            # Run my algorithm
-            print("Running my algorithm...")
-            my_algorithm_results = run_algorithm(my_algorithm_command)
+        Generate plots
+        if folder == "rows":
+            plot_results(results, output_folder, "num_rows", "Number of Rows")
+        elif folder == "groups":
+            plot_results(results, output_folder, "num_groups", "Number of Groups")
+        if folder == "violations":
+            plot_results(results, output_folder, "violation_percentage", "Violation Percentage")
 
-            # Run the external algorithm
-            print("Running the external algorithm...")
-            other_algorithm_results = run_algorithm(other_algorithm_command, is_external=True)
-
-            # Collect results for this dataset
-            all_results.append({
-                "dataset": dataset_file,
-                "My Algorithm": my_algorithm_results,
-                "External Algorithm": other_algorithm_results,
-            })
-
-    # Print summary of results
-    print("\nSummary of Results:")
-    for result in all_results:
-        print(f"Dataset: {result['dataset']}")
-        print(f"  My Algorithm: Rows Removed = {result['My Algorithm']['rows_removed']}, "
-              f"Execution Time = {result['My Algorithm']['time']:.4f}s")
-        print(f"  External Algorithm: Rows Removed = {result['External Algorithm']['rows_removed']}, "
-              f"Execution Time = {result['External Algorithm']['time']:.4f}s")
-
-    # Create comparison line plots
-    create_line_plots(all_results, output_folder)
-    print(f"\nComparison plots saved in the '{output_folder}' folder.")
+        print(f"Plots saved to {output_folder}\n\n")
