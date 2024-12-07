@@ -10,7 +10,7 @@ import matplotlib.pyplot as plt
 def run_algorithm(command, is_external=False):
     start_time = time.time()
     try:
-        result = subprocess.run(command, stdout=subprocess.PIPE, text=True, timeout=600)  # 600-second timeout
+        result = subprocess.run(command, stdout=subprocess.PIPE, text=True, timeout=60*2)
         end_time = time.time()
         execution_time = end_time - start_time
 
@@ -52,7 +52,7 @@ def process_single_dataset(dataset_path, my_algo_path, external_algo_path, agg_f
     index = int(filename.split("_")[-1].split(".")[0])  # Extract index from filename
 
     # Run my algorithm
-    my_command = ["python", my_algo_path, dataset_path, agg_function]
+    my_command = ["python", my_algo_path, dataset_path]
     my_results = run_algorithm(my_command)
 
     # Run external algorithm
@@ -71,7 +71,6 @@ def process_single_dataset(dataset_path, my_algo_path, external_algo_path, agg_f
         "external_rows_removed": external_results["rows_removed"],
     }
 
-# Function to process datasets in parallel
 def process_datasets_parallel(dataset_folder, my_algo_path, external_algo_path, agg_function):
     print("Collecting datasets...")
     dataset_paths = [
@@ -93,7 +92,6 @@ def process_datasets_parallel(dataset_folder, my_algo_path, external_algo_path, 
 
     return pd.DataFrame(results)
 
-# Function to plot results based on different x-axes
 def plot_results(results, output_folder, x_axis, x_label):
     print(f"Preparing data for plots with {x_axis} as x-axis...")
 
@@ -128,42 +126,18 @@ def plot_results(results, output_folder, x_axis, x_label):
     plt.savefig(os.path.join(output_folder, f"execution_time_comparison_{x_axis}.png"))
     plt.show()
 
-# Main script
 if __name__ == "__main__":
-    if len(sys.argv) < 2:
-        print("Usage: python compare_algorithms.py <function name>")
-        sys.exit(1)
-
-    agg_function = sys.argv[1].upper()  # Aggregate function, e.g., MAX, SUM
-    base_folder = "dataset-max-w6"
-    my_algo_path = "max-main.py"
-    external_algo_path = "Trendline-Outlier-Detection/main.py"
+    agg_function = sys.argv[1].upper()
+    base_folder = f"dataset-{agg_function.lower()}-w6"
     result_folder = f"results-w6/{agg_function}"
-    output_folders = {
-        "rows": result_folder + "/rows",
-        "groups": result_folder + "/groups",
-        "violations": result_folder + "/violations",
-    }
 
-    for folder, output_folder in output_folders.items():
-        dataset_folder = os.path.join(base_folder, folder)
-        if not os.path.exists(output_folder):
-            os.makedirs(output_folder)
+    for folder in ["rows", "groups", "violations"]:
+        dataset_folder = os.path.join(base_folder, folder, "datasets")
+        output_folder = os.path.join(result_folder, folder)
+        os.makedirs(output_folder, exist_ok=True)
 
-        print(f"Starting dataset processing for {folder} with {agg_function}...")
-        results = process_datasets_parallel(dataset_folder, my_algo_path, external_algo_path, agg_function)
-
-        # Save results to a CSV file
-        results_csv = os.path.join(output_folder, "comparison_results.csv")
-        results.to_csv(results_csv, index=False)
-        print(f"Results saved to {results_csv}")
-
-        # Generate plots
-        if folder == "rows":
-            plot_results(results, output_folder, "num_rows", "Number of Rows")
-        elif folder == "groups":
-            plot_results(results, output_folder, "num_groups", "Number of Groups")
-        elif folder == "violations":
-            plot_results(results, output_folder, "violation_percentage", "Violation Percentage")
-
-        print(f"Plots saved to {output_folder}\n\n")
+        results = process_datasets_parallel(dataset_folder, "max-main.py", "Trendline-Outlier-Detection/main.py", agg_function)
+        if not results.empty:
+            results.to_csv(os.path.join(output_folder, "comparison_results.csv"), index=False)
+            if folder == "rows":
+                plot_results(results, output_folder, "num_rows", "Number of Rows")
