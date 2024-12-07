@@ -90,24 +90,38 @@ def calculate_next_group_removal_impact(sorted_df, grouped_df, group_index):
     return impact, rows_removed
 
 def find_options(sorted_df, grouped_df, group):
-    """Calculate impact of removing the max tuple or group i+1."""
-    max_tuple = sorted_df[sorted_df["A"] == group].iloc[0]
+    """Calculate impact of removing the max tuple(s) or group i+1."""
+    max_value = sorted_df[sorted_df["A"] == group]["B"].max()  # Find the max value in the group
+    max_tuples = sorted_df[(sorted_df["A"] == group) & (sorted_df["B"] == max_value)]  # All tuples with max value
     group_index = grouped_df[grouped_df["A"] == group].index[0]
 
-    # Option 1 - Max tuple removal from group
-    temp_df = sorted_df.drop(index=max_tuple.name)
+    # Option 1 - Max tuples removal from group
+    temp_df = sorted_df.drop(index=max_tuples.index)  # Remove all tuples with max value
     remaining_group = temp_df[temp_df["A"] == group]
     new_group_i_alpha_val = remaining_group["B"].max() if not remaining_group.empty else float("-inf")
-    updated_grouped_df = handle_empty_group(grouped_df.copy(), group_index) if new_group_i_alpha_val == float("-inf") else update_group_mvi(grouped_df.copy(), group_index, new_group_i_alpha_val)
-    impact_max_tuple = grouped_df["MVI"].sum() - updated_grouped_df["MVI"].sum()
+    updated_grouped_df = (
+        handle_empty_group(grouped_df.copy(), group_index)
+        if new_group_i_alpha_val == float("-inf")
+        else update_group_mvi(grouped_df.copy(), group_index, new_group_i_alpha_val)
+    )
+    impact_max_tuples = grouped_df["MVI"].sum() - updated_grouped_df["MVI"].sum()
 
-    # Option 2- Next group removal
+    # Option 2 - Next group removal
     impact_group_removal, rows_removed = calculate_next_group_removal_impact(sorted_df, grouped_df, group_index)
 
     return {
-        "tuple_removal": (max_tuple.name, group, max_tuple["B"], impact_max_tuple, 1),
-        "group_removal": (None, grouped_df.loc[group_index + 1, "A"], None, impact_group_removal, rows_removed) if impact_group_removal is not None else None,
+        "tuple_removal": (max_tuples.index.tolist(), group, max_value, impact_max_tuples, len(max_tuples)),
+        "group_removal": (
+            None,
+            grouped_df.loc[group_index + 1, "A"],
+            None,
+            impact_group_removal,
+            rows_removed,
+        )
+        if impact_group_removal is not None
+        else None,
     }
+
 
 def calculate_impact(sorted_df, grouped_df):
     """Calculate impacts of tuple and group removals."""
@@ -115,10 +129,16 @@ def calculate_impact(sorted_df, grouped_df):
     for _, row in grouped_df[grouped_df["MVI"] > 0].iterrows():
         group = row["A"]
         options = find_options(sorted_df, grouped_df, group)
-        impacts.append(options["tuple_removal"]) #todo tuple removal can also have an impact of 0
+        impacts.append(options["tuple_removal"])  # Tuple removal includes multiple tuples now
         if options["group_removal"]:
             impacts.append(options["group_removal"])
-    return pd.DataFrame(impacts, columns=["Index", "A", "B", "Impact", "RowsRemoved"]).astype({"RowsRemoved": "int"}).sort_values(by=["Impact", "RowsRemoved"], ascending=[False, True]).reset_index(drop=True)
+    return (
+        pd.DataFrame(impacts, columns=["Index", "A", "B", "Impact", "RowsRemoved"])
+        .astype({"RowsRemoved": "int"})
+        .sort_values(by=["Impact", "RowsRemoved"], ascending=[False, True])
+        .reset_index(drop=True)
+    )
+
 
 # --- Main Algorithm ---
 def greedy_algorithm(df):
@@ -147,13 +167,19 @@ def greedy_algorithm(df):
             break
 
         max_impact = impact_df.iloc[0]
-        if pd.notna(max_impact["Index"]):  # Tuple removal
-            sorted_df = sorted_df.drop(index=int(max_impact["Index"])).reset_index(drop=True)
-            print(f"Removed tuple at index {int(max_impact['Index'])} with impact = {max_impact['Impact']}")
-            tuple_removals += 1
+        if isinstance(max_impact["Index"], list):  # Tuple removal for multiple tuples
+            sorted_df = sorted_df.drop(index=max_impact["Index"]).reset_index(drop=True)
+            print(
+                f"Removed tuples at indices {max_impact['Index']} in group {max_impact['A']} "
+                f"with impact = {max_impact['Impact']}"
+            )
+            tuple_removals += len(max_impact["Index"])
         else:  # Group removal
             sorted_df = sorted_df[sorted_df["A"] != max_impact["A"]].reset_index(drop=True)
-            print(f"Removed group {max_impact['A']} with impact = {max_impact['Impact']} and rows removed = {max_impact['RowsRemoved']}")
+            print(
+                f"Removed group {max_impact['A']} with impact = {max_impact['Impact']} "
+                f"and rows removed = {max_impact['RowsRemoved']}"
+            )
             tuple_removals += int(max_impact["RowsRemoved"])
             group_removals += 1
         iteration += 1
