@@ -27,9 +27,9 @@ def create_dataset(
         raise ValueError("Aggregation function must be 'sum' or 'max'.")
 
     # Ensure the output folder exists
-    output_folder = os.path.join(output_folder, "datasets")
-    if not os.path.exists(output_folder):
-        os.makedirs(output_folder)
+    datasets_output_folder = os.path.join(output_folder, "datasets")
+    if not os.path.exists(datasets_output_folder):
+        os.makedirs(datasets_output_folder)
 
     # Assign groups to rows
     groups = [i % num_groups + 1 for i in range(num_rows)]
@@ -63,7 +63,7 @@ def create_dataset(
     df["B"] = df["A"].map(lambda a: random.randint(1, monotonic_B[a]))
 
     # Save the dataset with a custom suffix
-    dataset_filename = os.path.join(output_folder, f"dataset_{name_suffix}_{index}.csv")
+    dataset_filename = os.path.join(datasets_output_folder, f"dataset_{name_suffix}_{index}.csv")
     df.to_csv(dataset_filename, index=False)
     print(f"Dataset saved to {dataset_filename}")
 
@@ -85,8 +85,13 @@ def plot_dataset(df, group_agg, agg_func_name, output_folder, index, name_suffix
         index (int): Index of the dataset (for unique naming).
         name_suffix (str): Custom suffix for naming output files.
     """
-    # Scatter plot
+    # Ensure subfolders exist
     scatter_plot_folder = os.path.join(output_folder, "scatter_plots")
+    bar_plot_folder = os.path.join(output_folder, "bar_plots")
+    os.makedirs(scatter_plot_folder, exist_ok=True)
+    os.makedirs(bar_plot_folder, exist_ok=True)
+
+    # Scatter plot
     scatter_plot_file = os.path.join(scatter_plot_folder, f"scatter_plot_{name_suffix}_{index}.png")
     plt.figure(figsize=(8, 6))
     plt.scatter(df["A"], df["B"], alpha=0.6, c="blue", label="Data Points")
@@ -99,7 +104,6 @@ def plot_dataset(df, group_agg, agg_func_name, output_folder, index, name_suffix
     plt.close()
 
     # Bar plot
-    bar_plot_folder = os.path.join(output_folder, "bar_plots")
     bar_plot_file = os.path.join(bar_plot_folder, f"bar_plot_{name_suffix}_{index}.png")
     plt.figure(figsize=(8, 6))
     plt.bar(group_agg["A"], group_agg["B"], alpha=0.7, color="green", label=f"Group {agg_func_name.upper()}")
@@ -115,38 +119,32 @@ def plot_dataset(df, group_agg, agg_func_name, output_folder, index, name_suffix
 if __name__ == "__main__":
     num_datasets_per_setting = 3  # Generate 3 datasets for each setting
 
-    # Case 1: 5 groups and rows from 100 to 1000 in increments of 100
-    for num_rows in range(100, 600, 100):
+    # Case 1: rows from 100 to 1000 in increments of 100
+    for num_rows in range(100, 300, 100):
         for i in range(num_datasets_per_setting):
-            create_dataset(num_groups=5, num_rows=num_rows, agg_func_name="sum",
-                           output_folder="dataset-sum-w6/rows",
+            create_dataset(num_groups=10, num_rows=num_rows, agg_func_name="sum", output_folder="dataset-sum-w6/rows",
                            index=i, violations_percentage=10,
-                           name_suffix=f"sum_g5_r{num_rows}_v10")
-            create_dataset(num_groups=5, num_rows=num_rows, agg_func_name="max",
-                           output_folder="dataset-max-w6/rows",
+                           name_suffix=f"sum_g10_r{num_rows}_v10")
+            create_dataset(num_groups=10, num_rows=num_rows, agg_func_name="max", output_folder="dataset-max-w6/rows",
                            index=i, violations_percentage=10,
-                           name_suffix=f"max_g5_r{num_rows}_v10")
+                           name_suffix=f"max_g10_r{num_rows}_v10")
 
-    # Case 2: 500 rows and groups from 5 to 50 in increments of 5
-    for num_groups in range(5, 30, 5):
+    # Case 2: groups from 5 to 50 in increments of 5
+    for num_groups in range(5, 15, 5):
         for i in range(num_datasets_per_setting):
-            create_dataset(num_groups=num_groups, num_rows=500, agg_func_name="sum",
-                           output_folder="dataset-sum-w6/groups",
+            create_dataset(num_groups=num_groups, num_rows=500, agg_func_name="sum", output_folder="dataset-sum-w6/groups",
                            index=i, violations_percentage=10,
                            name_suffix=f"sum_g{num_groups}_r500_v10")
-            create_dataset(num_groups=num_groups, num_rows=500, agg_func_name="max",
-                           output_folder="dataset-max-w6/groups",
+            create_dataset(num_groups=num_groups, num_rows=500, agg_func_name="max", output_folder="dataset-max-w6/groups",
                            index=i, violations_percentage=10,
                            name_suffix=f"max_g{num_groups}_r500_v10")
 
-    #Case 3: 5 groups, 300 rows, violations_percentage from 5 to 50 in increments of 5
-    for violations_percentage in range(5, 30, 5):
+    #Case 3: violations_percentage from 5 to 50 in increments of 5
+    for violations_percentage in range(5, 15, 5):
         for i in range(num_datasets_per_setting):
-            create_dataset(num_groups=5, num_rows=300, agg_func_name="sum",
-                           output_folder="dataset-sum-w6/violations",
+            create_dataset(num_groups=10, num_rows=500, agg_func_name="sum", output_folder="dataset-sum-w6/violations",
                            index=i, violations_percentage=violations_percentage,
-                           name_suffix=f"sum_g5_r300_v{violations_percentage}")
-            create_dataset(num_groups=5, num_rows=300, agg_func_name="max",
-                           output_folder="dataset-max-w6/violations",
+                           name_suffix=f"sum_g10_r500_v{violations_percentage}")
+            create_dataset(num_groups=10, num_rows=500, agg_func_name="max", output_folder="dataset-max-w6/violations",
                            index=i, violations_percentage=violations_percentage,
-                           name_suffix=f"max_g5_r300_v{violations_percentage}")
+                           name_suffix=f"max_g10_r500_v{violations_percentage}")
