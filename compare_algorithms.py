@@ -1,4 +1,5 @@
 import os
+import sys
 import pandas as pd
 import subprocess
 import time
@@ -9,7 +10,7 @@ import matplotlib.pyplot as plt
 def run_algorithm(command, is_external=False):
     start_time = time.time()
     try:
-        result = subprocess.run(command, stdout=subprocess.PIPE, text=True, timeout=600)  # second timeout
+        result = subprocess.run(command, stdout=subprocess.PIPE, text=True, timeout=600)  # 600-second timeout
         end_time = time.time()
         execution_time = end_time - start_time
 
@@ -40,7 +41,7 @@ def run_algorithm(command, is_external=False):
         return {"time": None, "rows_removed": None}  # Return None for timeout
 
 # Helper function to process a single dataset
-def process_single_dataset(dataset_path, my_algo_path, external_algo_path):
+def process_single_dataset(dataset_path, my_algo_path, external_algo_path, agg_function):
     print(f"Processing dataset: {dataset_path}")
     filename = os.path.basename(dataset_path)
 
@@ -51,11 +52,11 @@ def process_single_dataset(dataset_path, my_algo_path, external_algo_path):
     index = int(filename.split("_")[-1].split(".")[0])  # Extract index from filename
 
     # Run my algorithm
-    my_command = ["python", my_algo_path, dataset_path]
+    my_command = ["python", my_algo_path, dataset_path, agg_function]
     my_results = run_algorithm(my_command)
 
     # Run external algorithm
-    external_command = ["python", external_algo_path, "MAX", dataset_path, "B", "A"]
+    external_command = ["python", external_algo_path, agg_function, dataset_path, "B", "A"]
     external_results = run_algorithm(external_command, is_external=True)
 
     return {
@@ -71,7 +72,7 @@ def process_single_dataset(dataset_path, my_algo_path, external_algo_path):
     }
 
 # Function to process datasets in parallel
-def process_datasets_parallel(dataset_folder, my_algo_path, external_algo_path):
+def process_datasets_parallel(dataset_folder, my_algo_path, external_algo_path, agg_function):
     print("Collecting datasets...")
     dataset_paths = [
         os.path.join(dataset_folder, f) for f in os.listdir(dataset_folder) if f.endswith(".csv")
@@ -81,7 +82,7 @@ def process_datasets_parallel(dataset_folder, my_algo_path, external_algo_path):
     print(f"Found {len(dataset_paths)} datasets. Processing in parallel...")
     with ProcessPoolExecutor() as executor:
         future_to_dataset = {
-            executor.submit(process_single_dataset, dataset, my_algo_path, external_algo_path): dataset
+            executor.submit(process_single_dataset, dataset, my_algo_path, external_algo_path, agg_function): dataset
             for dataset in dataset_paths
         }
         for future in as_completed(future_to_dataset):
@@ -129,13 +130,19 @@ def plot_results(results, output_folder, x_axis, x_label):
 
 # Main script
 if __name__ == "__main__":
+    if len(sys.argv) < 2:
+        print("Usage: python compare_algorithms.py <function name>")
+        sys.exit(1)
+
+    agg_function = sys.argv[1].upper()  # Aggregate function, e.g., MAX, SUM
     base_folder = "dataset-max-w6"
     my_algo_path = "max-main.py"
     external_algo_path = "Trendline-Outlier-Detection/main.py"
+    result_folder = f"results-w6/{agg_function}"
     output_folders = {
-        "rows": "results-w6/rows",
-        "groups": "results-w6/groups",
-        "violations": "results-w6/violations"
+        "rows": result_folder + "/rows",
+        "groups": result_folder + "/groups",
+        "violations": result_folder + "/violations",
     }
 
     for folder, output_folder in output_folders.items():
@@ -143,20 +150,20 @@ if __name__ == "__main__":
         if not os.path.exists(output_folder):
             os.makedirs(output_folder)
 
-        print(f"Starting dataset processing for {folder}...")
-        results = process_datasets_parallel(dataset_folder, my_algo_path, external_algo_path)
+        print(f"Starting dataset processing for {folder} with {agg_function}...")
+        results = process_datasets_parallel(dataset_folder, my_algo_path, external_algo_path, agg_function)
 
         # Save results to a CSV file
         results_csv = os.path.join(output_folder, "comparison_results.csv")
         results.to_csv(results_csv, index=False)
         print(f"Results saved to {results_csv}")
 
-        Generate plots
+        # Generate plots
         if folder == "rows":
             plot_results(results, output_folder, "num_rows", "Number of Rows")
         elif folder == "groups":
             plot_results(results, output_folder, "num_groups", "Number of Groups")
-        if folder == "violations":
+        elif folder == "violations":
             plot_results(results, output_folder, "violation_percentage", "Violation Percentage")
 
         print(f"Plots saved to {output_folder}\n\n")
