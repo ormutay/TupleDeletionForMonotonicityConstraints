@@ -158,6 +158,10 @@ def greedy_algorithm(df):
             print("No violations remain. Algorithm completed.")
             break
 
+        if Smvi < 0:
+            print("!!!! Smvi < 0 !!!!, Algorithm completed.")
+            break
+
         impact_df = calculate_impact(sorted_df, grouped_df)
         print("Impact DataFrame:")
         print(impact_df)
