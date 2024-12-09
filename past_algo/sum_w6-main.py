@@ -153,6 +153,104 @@ def greedy_algorithm(df, agg_func, output_csv="results/iteration_log.csv", group
     return sorted_df
 
 
+
+# if __name__ == "__main__":
+#     cases = [
+#         {
+#             "description": "Random Values (Normal Case)",
+#             "data": {
+#             "A": [1, 1, 1, 2, 2, 2, 3, 3, 3],
+#             "B": [6, 5, 4, 3, 2, 1, 7, 8, 9],
+#             },
+#             "ideal_deleted_rows": 2,
+#         },
+#         {
+#             "description": "Example from presentation (Normal Case)",
+#             "data": {
+#                 "A": [1, 1, 1, 2, 2, 2, 3, 3, 3, 4, 4, 4],
+#                 "B": [1, 2, 6, 3, 4, 4, 2, 3, 4, 1, 1, 2],
+#             },
+#             "ideal_deleted_rows": 4,
+#         },
+#         {
+#             "description": "Random Values (Normal Case)",
+#             "data": {
+#                 "A": [1, 1, 1, 2, 2, 2, 3, 3, 3],
+#                 "B": [6, 5, 4, 3, 2, 1, 7, 8, 9],
+#             },
+#             "ideal_deleted_rows": 2,
+#         },
+#         {
+#             "description": "Strictly Increasing Groups (No Deletions Needed)",
+#             "data": {
+#                 "A": [1, 1, 1, 2, 2, 2, 3, 3, 3],
+#                 "B": [1, 2, 3, 4, 5, 6, 7, 8, 9],
+#             },
+#             "ideal_deleted_rows": 0,
+#         },
+#         {
+#             "description": "Reverse Order Groups (Edge Case)", #todo: need to talk about this
+#             "data": {
+#                 "A": [1, 1, 1, 2, 2, 2, 3, 3, 3, 3],
+#                 "B": [9, 8, 7, 6, 5, 4, 3, 3, 2, 1],
+#             },
+#             "ideal_deleted_rows": 3,
+#         },
+#         {
+#             "description": "Single Row per Group (Normal Case)",
+#             "data": {
+#                 "A": [1, 2, 3, 4],
+#                 "B": [4, 3, 2, 1],
+#             },
+#             "ideal_deleted_rows": 3,
+#         },
+#         {
+#             "description": "Empty Dataset (Edge Case)",
+#             "data": {
+#                 "A": [],
+#                 "B": [],
+#             },
+#             "ideal_deleted_rows": 0,
+#         },
+#         {
+#             "description": "Single Group with Multiple Rows (No Deletions Needed)",
+#             "data": {
+#                 "A": [1, 1, 1, 1],
+#                 "B": [10, 9, 8, 7],
+#             },
+#             "ideal_deleted_rows": 0,
+#         },
+#         {
+#             "description": "All Groups Have Equal Sum (Edge Case)",
+#             "data": {
+#                 "A": [1, 1, 2, 2, 3, 3],
+#                 "B": [5, 5, 5, 5, 5, 5],
+#             },
+#             "ideal_deleted_rows": 0,
+#         },
+#         {
+#             "description": "Mixed Violations (Complex Case)",
+#             "data": {
+#                 "A": [1, 1, 2, 2, 3, 3, 4, 4],
+#                 "B": [10, 2, 8, 3, 6, 1, 5, 7],
+#             },
+#             "ideal_deleted_rows": 3,
+#         },
+#     ]
+#
+#     for case in cases:
+#         print("\033[1;94m" + f"Running Case: {case['description']}" + "\033[0m")  # Bold and Blue for description
+#         df = pd.DataFrame(case["data"])
+#         print("Input DataFrame:")
+#         print(df)
+#         print("ideal_deleted_rows:", case.get("ideal_deleted_rows", "N/A"))
+#         print("\033[1m\n running greedy algorithm..\033[0m")
+#         result = greedy_algorithm(df, agg_func="sum")
+#         print("Final DataFrame After Greedy Algorithm:")
+#         print(result)
+#         print("\033[92m" + "=" * 50 + "\033[0m")  # Green separator line
+
+
 # python sum-main.py <path_to_csv_file> --grouping_column <group_col> --aggregation_column <agg_col> --output_csv <path_to_output_csv>
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run the greedy algorithm on a specified CSV file.")
