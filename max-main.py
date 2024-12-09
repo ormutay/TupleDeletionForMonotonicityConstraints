@@ -134,8 +134,13 @@ def calculate_impact(sorted_df, grouped_df, grouping_column="A", aggregation_col
 
 
 # --- Main Algorithm ---
-def greedy_algorithm(df, grouping_column="A", aggregation_column="B"):
+def greedy_algorithm(df, grouping_column="A", aggregation_column="B", output_csv="results/iteration_log.csv"):
     """Greedy algorithm to minimize Smvi by removing tuples or groups."""
+    # Ensure output directory exists
+    output_dir = os.path.dirname(output_csv)
+    if output_dir and not os.path.exists(output_dir):
+        os.makedirs(output_dir)
+
     iteration = 0
     sorted_df = preprocess_sort(df, grouping_column, aggregation_column)
 
@@ -143,10 +148,13 @@ def greedy_algorithm(df, grouping_column="A", aggregation_column="B"):
     group_removals = 0
     start_time = time.time()
 
+    # Collect iteration details for CSV
+    iteration_logs = []
+
     while True:
         grouped_df = calculate_group_stats(sorted_df, grouping_column, aggregation_column)
         Smvi = grouped_df["MVI"].sum()
-        print(f"\nIteration {iteration}: Current Smvi = {Smvi}")
+
         if Smvi == 0:
             print("No violations remain. Algorithm completed.")
             break
@@ -156,38 +164,54 @@ def greedy_algorithm(df, grouping_column="A", aggregation_column="B"):
             break
 
         impact_df = calculate_impact(sorted_df, grouped_df, grouping_column, aggregation_column)
-        print("Impact DataFrame:")
-        print(impact_df)
 
         if impact_df.empty or impact_df.iloc[0]["Impact"] <= 0: #todo: this was relavent only in the case of tuple removal without group removal
             print("No positive impact available. Exiting loop.")
             break
 
         max_impact = impact_df.iloc[0]
+        deleted_group = False
         if isinstance(max_impact["Index"], list):  # Tuple removal for multiple tuples
+            removed_group_value = max_impact[grouping_column]
+            removed_aggregation_value = max_impact[aggregation_column]
+            num_removed = len(max_impact["Index"])
             sorted_df = sorted_df.drop(index=max_impact["Index"]).reset_index(drop=True)
-            print(
-                f"Removed tuples at indices {max_impact['Index']} in group {max_impact[grouping_column]} "
-                f"with impact = {max_impact['Impact']}"
-            )
-            tuple_removals += len(max_impact["Index"])
+
         else:  # Group removal
-            sorted_df = sorted_df[sorted_df[grouping_column] != max_impact[grouping_column]].reset_index(drop=True)
-            print(
-                f"Removed group {max_impact[grouping_column]} with impact = {max_impact['Impact']} "
-                f"and rows removed = {max_impact['RowsRemoved']}"
-            )
-            tuple_removals += int(max_impact["RowsRemoved"])
+            removed_group_value = max_impact[grouping_column]
+            removed_aggregation_value = None
+            num_removed = int(max_impact["RowsRemoved"])
+            sorted_df = sorted_df[sorted_df[grouping_column] != removed_group_value].reset_index(drop=True)
+            deleted_group = True
             group_removals += 1
+
+        iteration_logs.append({
+            "Iteration": iteration,
+            "Current Smvi": Smvi,
+            "Tuple Removed Group Value": removed_group_value,
+            "Tuple Removed Aggregation Value": removed_aggregation_value,
+            "Number of Tuples Removed": num_removed,
+            "Impact": max_impact["Impact"],
+            "Group Deleted": deleted_group
+        })
+
+        tuple_removals += num_removed
         iteration += 1
 
     end_time = time.time()
     total_time = end_time - start_time
+
     print("\nAlgorithm Summary:")
     print(f"Total tuple removals: {tuple_removals}")
     print(f"Total group removals: {group_removals}")
     print(f"Total execution time: {total_time:.4f} seconds")
+
+    # Write iteration logs to CSV
+    pd.DataFrame(iteration_logs).to_csv(output_csv, index=False)
+    print(f"Iteration log saved to {output_csv}")
+
     return sorted_df
+
 
 # if __name__ == "__main__":
 #     cases = [
@@ -269,11 +293,4 @@ if __name__ == "__main__":
 
     print(f"Processing file: {csv_file}")
     df = pd.read_csv(csv_file)
-    print("Input DataFrame:")
-    print(df)
-
-    result_df = greedy_algorithm(df, args.grouping_column, args.aggregation_column)
-
-    # Save the processed output
-    result_df.to_csv(args.output_csv, index=False)
-    print(f"Processed file saved to {args.output_csv}")
+    result_df = greedy_algorithm(df, args.grouping_column, args.aggregation_column, args.output_csv)
