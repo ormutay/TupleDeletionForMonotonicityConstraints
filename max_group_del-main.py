@@ -1,26 +1,36 @@
+
+""" for me:
+.reset_index(drop=True):
+                       resets the index after sorting, so the row indices are sequential (0, 1, 2, ...).
+                       drop=True avoids adding the old index as a new column. 
+
+grouped_df["MVI"] = grouped_df["Alpha(A_i)"].diff(-1).fillna(0).apply(lambda x: max(0, x))
+                        diff(-1): Computes the difference between the current group’s Alpha and the next group’s Alpha.
+                        fillna(0): Replaces NaN values with 0.
+                        apply(lambda x: max(0, x)): Replaces negative values with 0.
+"""
+
+
 import pandas as pd
 import time
 import argparse
 import os
 
-
 # --- Preprocessing ---
-def preprocess_sort(df, grouping_column="A", aggregation_column="B"):
-    """Sort DataFrame by grouping and aggregation columns in descending order."""
-    return df.sort_values(by=[grouping_column, aggregation_column], ascending=[True, False]).reset_index(drop=True)
-
+def preprocess_sort(df):
+    """Sort DataFrame by groups (A) and values (B) in descending order."""
+    return df.sort_values(by=["A", "B"], ascending=[True, False]).reset_index(drop=True)
 
 # --- MVI Calculation ---
-def calculate_group_stats(sorted_df, grouping_column="A", aggregation_column="B"):
+def calculate_group_stats(sorted_df):
     """
     Calculate Measure of Violations Index (MVI) for adjacent groups.
     Only considers positive violations where Alpha(A_i) > Alpha(A_{i+1}).
     """
-    grouped_df = sorted_df.groupby(grouping_column).first().reset_index()
-    grouped_df.rename(columns={aggregation_column: "Alpha(A_i)"}, inplace=True)
+    grouped_df = sorted_df.groupby("A").first().reset_index()
+    grouped_df.rename(columns={"B": "Alpha(A_i)"}, inplace=True)
     grouped_df["MVI"] = grouped_df["Alpha(A_i)"].diff(-1).fillna(0).clip(lower=0)  # Use clip for clarity
     return grouped_df
-
 
 # --- Group Updates ---
 def handle_empty_group(grouped_df, group_index):
@@ -35,7 +45,6 @@ def handle_empty_group(grouped_df, group_index):
             0, grouped_df.loc[prev_group_index, "Alpha(A_i)"] - next_group_alpha
         )
     return grouped_df.drop(index=group_index).reset_index(drop=True)
-
 
 def update_group_mvi(grouped_df, group_index, new_group_i_alpha_val):
     """Update MVI for the affected group (i) and (i-1)."""
@@ -58,15 +67,14 @@ def update_group_mvi(grouped_df, group_index, new_group_i_alpha_val):
 
     return grouped_df
 
-
 # --- Impact Calculation ---
-def calculate_next_group_removal_impact(sorted_df, grouped_df, group_index, grouping_column="A"):
+def calculate_next_group_removal_impact(sorted_df, grouped_df, group_index):
     """Calculate the impact of removing all rows in group i+1."""
     next_group_index = group_index + 1
     if next_group_index not in grouped_df.index:
         return None  # No group i+1 exists (so I can't try to remove it)
 
-    next_group = grouped_df.loc[next_group_index, grouping_column]
+    next_group = grouped_df.loc[next_group_index, "A"]
 
     updated_grouped_df = grouped_df.drop(index=next_group_index).reset_index(drop=True)
     group_alpha_val = updated_grouped_df.loc[group_index, "Alpha(A_i)"]
@@ -78,20 +86,19 @@ def calculate_next_group_removal_impact(sorted_df, grouped_df, group_index, grou
         updated_grouped_df.loc[group_index, "MVI"] = 0  # No next group
 
     impact = grouped_df["MVI"].sum() - updated_grouped_df["MVI"].sum()
-    rows_removed = int(len(sorted_df[sorted_df[grouping_column] == next_group]))
+    rows_removed = int(len(sorted_df[sorted_df["A"] == next_group]))
     return impact, rows_removed
 
-
-def find_options(sorted_df, grouped_df, group, grouping_column="A", aggregation_column="B"):
+def find_options(sorted_df, grouped_df, group):
     """Calculate impact of removing the max tuple(s) or group i+1."""
-    max_value = sorted_df[sorted_df[grouping_column] == group][aggregation_column].max()  # Find the max value in the group
-    max_tuples = sorted_df[(sorted_df[grouping_column] == group) & (sorted_df[aggregation_column] == max_value)]  # All tuples with max value
-    group_index = grouped_df[grouped_df[grouping_column] == group].index[0]
+    max_value = sorted_df[sorted_df["A"] == group]["B"].max()  # Find the max value in the group
+    max_tuples = sorted_df[(sorted_df["A"] == group) & (sorted_df["B"] == max_value)]  # All tuples with max value
+    group_index = grouped_df[grouped_df["A"] == group].index[0]
 
     # Option 1 - Max tuples removal from group
     temp_df = sorted_df.drop(index=max_tuples.index)  # Remove all tuples with max value
-    remaining_group = temp_df[temp_df[grouping_column] == group]
-    new_group_i_alpha_val = remaining_group[aggregation_column].max() if not remaining_group.empty else float("-inf")
+    remaining_group = temp_df[temp_df["A"] == group]
+    new_group_i_alpha_val = remaining_group["B"].max() if not remaining_group.empty else float("-inf")
     updated_grouped_df = (
         handle_empty_group(grouped_df.copy(), group_index)
         if new_group_i_alpha_val == float("-inf")
@@ -106,7 +113,7 @@ def find_options(sorted_df, grouped_df, group, grouping_column="A", aggregation_
         "tuple_removal": (max_tuples.index.tolist(), group, max_value, impact_max_tuples, len(max_tuples)),
         "group_removal": (
             None,
-            grouped_df.loc[group_index + 1, grouping_column],
+            grouped_df.loc[group_index + 1, "A"],
             None,
             impact_group_removal,
             rows_removed,
@@ -116,17 +123,17 @@ def find_options(sorted_df, grouped_df, group, grouping_column="A", aggregation_
     }
 
 
-def calculate_impact(sorted_df, grouped_df, grouping_column="A", aggregation_column="B"):
+def calculate_impact(sorted_df, grouped_df):
     """Calculate impacts of tuple and group removals."""
     impacts = []
     for _, row in grouped_df[grouped_df["MVI"] > 0].iterrows():
-        group = row[grouping_column]
+        group = row["A"]
         options = find_options(sorted_df, grouped_df, group)
         impacts.append(options["tuple_removal"])  # Tuple removal includes multiple tuples now
         if options["group_removal"]:
             impacts.append(options["group_removal"])
     return (
-        pd.DataFrame(impacts, columns=["Index", grouping_column, aggregation_column, "Impact", "RowsRemoved"])
+        pd.DataFrame(impacts, columns=["Index", "A", "B", "Impact", "RowsRemoved"])
         .astype({"RowsRemoved": "int"})
         .sort_values(by=["Impact", "RowsRemoved"], ascending=[False, True])
         .reset_index(drop=True)
@@ -134,17 +141,17 @@ def calculate_impact(sorted_df, grouped_df, grouping_column="A", aggregation_col
 
 
 # --- Main Algorithm ---
-def greedy_algorithm(df, grouping_column="A", aggregation_column="B"):
+def greedy_algorithm(df):
     """Greedy algorithm to minimize Smvi by removing tuples or groups."""
     iteration = 0
-    sorted_df = preprocess_sort(df, grouping_column, aggregation_column)
+    sorted_df = preprocess_sort(df)
 
     tuple_removals = 0
     group_removals = 0
     start_time = time.time()
 
     while True:
-        grouped_df = calculate_group_stats(sorted_df, grouping_column, aggregation_column)
+        grouped_df = calculate_group_stats(sorted_df)
         Smvi = grouped_df["MVI"].sum()
         print(f"\nIteration {iteration}: Current Smvi = {Smvi}")
         if Smvi == 0:
@@ -155,7 +162,7 @@ def greedy_algorithm(df, grouping_column="A", aggregation_column="B"):
             print("!!!! Smvi < 0 !!!!, Algorithm completed.")
             break
 
-        impact_df = calculate_impact(sorted_df, grouped_df, grouping_column, aggregation_column)
+        impact_df = calculate_impact(sorted_df, grouped_df)
         print("Impact DataFrame:")
         print(impact_df)
 
@@ -167,14 +174,14 @@ def greedy_algorithm(df, grouping_column="A", aggregation_column="B"):
         if isinstance(max_impact["Index"], list):  # Tuple removal for multiple tuples
             sorted_df = sorted_df.drop(index=max_impact["Index"]).reset_index(drop=True)
             print(
-                f"Removed tuples at indices {max_impact['Index']} in group {max_impact[grouping_column]} "
+                f"Removed tuples at indices {max_impact['Index']} in group {max_impact['A']} "
                 f"with impact = {max_impact['Impact']}"
             )
             tuple_removals += len(max_impact["Index"])
         else:  # Group removal
-            sorted_df = sorted_df[sorted_df[grouping_column] != max_impact[grouping_column]].reset_index(drop=True)
+            sorted_df = sorted_df[sorted_df["A"] != max_impact["A"]].reset_index(drop=True)
             print(
-                f"Removed group {max_impact[grouping_column]} with impact = {max_impact['Impact']} "
+                f"Removed group {max_impact['A']} with impact = {max_impact['Impact']} "
                 f"and rows removed = {max_impact['RowsRemoved']}"
             )
             tuple_removals += int(max_impact["RowsRemoved"])
@@ -257,9 +264,6 @@ def greedy_algorithm(df, grouping_column="A", aggregation_column="B"):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run the greedy algorithm on a specified CSV file.")
     parser.add_argument("csv_file", type=str, help="The path to the input CSV file.")
-    parser.add_argument("--grouping_column", type=str, default="A", help="The name of the grouping column.")
-    parser.add_argument("--aggregation_column", type=str, default="B", help="The name of the aggregation column.")
-    parser.add_argument("--output_csv", type=str, default="processed_output.csv", help="Path for the output CSV file.")
     args = parser.parse_args()
 
     csv_file = args.csv_file
@@ -272,8 +276,9 @@ if __name__ == "__main__":
     print("Input DataFrame:")
     print(df)
 
-    result_df = greedy_algorithm(df, args.grouping_column, args.aggregation_column)
+    result_df = greedy_algorithm(df)
 
-    # Save the processed output
-    result_df.to_csv(args.output_csv, index=False)
-    print(f"Processed file saved to {args.output_csv}")
+    # # Save the processed output
+    # output_file = f"processed_{os.path.basename(csv_file)}"
+    # result_df.to_csv(output_file, index=False)
+    # print(f"Processed file saved to {output_file}")
