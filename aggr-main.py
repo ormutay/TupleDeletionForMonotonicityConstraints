@@ -74,6 +74,28 @@ def calculate_tuple_removal_impact_sum(sorted_df, grouped_df, group, grouping_co
 
     return impacts
 
+
+def calculate_tuple_removal_impact_avg(sorted_df, grouped_df, group, grouping_column="A", aggregation_column="B"):
+    """Calculate the impact of removing each tuple in a group individually for AVG."""
+    group_index = grouped_df[grouped_df[grouping_column] == group].index[0]
+    group_tuples = sorted_df[sorted_df[grouping_column] == group]
+
+    impacts = []
+    for _, row in group_tuples.iterrows():
+        temp_df = sorted_df.drop(index=row.name)
+        remaining_group = temp_df[temp_df[grouping_column] == group]
+        if not remaining_group.empty:
+            new_group_alpha = remaining_group[aggregation_column].mean()
+        else:
+            new_group_alpha = 0
+
+        updated_grouped_df = update_group_mvi(grouped_df.copy(), group_index, new_group_alpha)
+
+        impact = grouped_df["MVI"].sum() - updated_grouped_df["MVI"].sum()
+        impacts.append((row.name, row[aggregation_column], impact))
+
+    return impacts
+
 # --- Greedy Algorithm ---
 def greedy_algorithm(df, agg_func, grouping_column="A", aggregation_column="B", output_csv="results/iteration_log.csv"):
     """Greedy algorithm to minimize Smvi by removing tuples."""
@@ -104,6 +126,8 @@ def greedy_algorithm(df, agg_func, grouping_column="A", aggregation_column="B", 
                 impacts.extend(calculate_tuple_removal_impact_max(sorted_df, grouped_df, group, grouping_column, aggregation_column))
             elif agg_func == "SUM":
                 impacts.extend(calculate_tuple_removal_impact_sum(sorted_df, grouped_df, group, grouping_column, aggregation_column))
+            elif agg_func == "AVG":
+                impacts.extend(calculate_tuple_removal_impact_avg(sorted_df, grouped_df, group, grouping_column, aggregation_column))
             else:
                 raise ValueError("Unsupported aggregation function")
 
@@ -142,16 +166,29 @@ def greedy_algorithm(df, agg_func, grouping_column="A", aggregation_column="B", 
     return sorted_df
 
 # --- Main Entry Point ---
+#python aggr-main.py <input_csv> <agg_func> --grouping_column <grouping_column> --aggregation_column <aggregation_column> --output_csv <output_csv>
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run the greedy algorithm with a specified aggregation function.")
     parser.add_argument("csv_file", type=str, help="The path to the input CSV file.")
-    parser.add_argument("agg_func", type=str, choices=["sum", "max"], help="The aggregation function to use.")
+    parser.add_argument("agg_func", type=str, choices=["sum", "max", "avg"], help="The aggregation function to use.")
     parser.add_argument("--grouping_column", type=str, default="A", help="The column to group by.")
     parser.add_argument("--aggregation_column", type=str, default="B", help="The column to aggregate.")
     parser.add_argument("--output_csv", type=str, default="results/iteration_log.csv", help="The path for the output CSV file.")
     args = parser.parse_args()
 
-    df = pd.read_csv(args.csv_file)
-    agg_func = sum if args.agg_func == "sum" else max
+    csv_name = os.path.basename(args.csv_file)  # Extract the file name without the path
+    function_map = {"sum": sum, "max": max, "avg": pd.Series.mean}
+    agg_func = function_map[args.agg_func]
 
-    greedy_algorithm(df, agg_func, grouping_column=args.grouping_column, aggregation_column=args.aggregation_column, output_csv=args.output_csv)
+    print(f"Processing file: {csv_name} with aggregation function: {agg_func.__name__}")
+
+    df = pd.read_csv(args.csv_file)
+
+    result_df = greedy_algorithm(df, agg_func, grouping_column=args.grouping_column, aggregation_column=args.aggregation_column, output_csv=args.output_csv)
+
+    # Plot aggregated values before and after the algorithm
+    plot_aggregation(df, args.grouping_column, args.aggregation_column, f"Before Algorithm ({agg_func.__name__.upper()})", "results_plots/before_algorithm.pdf", agg_func)
+    plot_aggregation(result_df, args.grouping_column, args.aggregation_column, f"After Algorithm ({agg_func.__name__.upper()})", "results_plots/after_algorithm.pdf", agg_func)
+
+    # Plot impact per iteration
+    plot_impact_per_iteration(args.output_csv, "results_plots/impact_per_iteration.pdf")
