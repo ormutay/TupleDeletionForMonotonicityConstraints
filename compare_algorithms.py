@@ -52,21 +52,21 @@ def process_single_dataset(dataset_path, greedy_algo_path, dp_algo_path, agg_fun
     violation_percentage = int(filename.split("_")[4][1:]) if "_v" in filename else None
     index = int(filename.split("_")[-1].split(".")[0])  # Extract index from filename
 
+    output_csv = os.path.join(results_folder, f"greedy_{filename}_output.csv")
     # Run greedy algorithm
     greedy_command = [
         "python", greedy_algo_path, dataset_path,
         "--grouping_column", group_column,
         "--aggregation_column", agg_column,
-        "--output_csv", f"{results_folder}/greedy_{filename}_output.csv"
+        "--output_csv", output_csv,
+        "--output_folder", output_folder,
     ]
-    print(f"Running greedy algorithm: {' '.join(greedy_command)}")
     greedy_results = run_algorithm(greedy_command, is_dp=False, timeout=timeout)
 
     # Run DP algorithm
     dp_command = [
         "python", dp_algo_path, agg_function, dataset_path, agg_column, group_column
     ]
-    print(f"Running DP algorithm: {' '.join(dp_command)}")
     dp_results = run_algorithm(dp_command, is_dp=True, timeout=timeout)
 
     return {

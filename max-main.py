@@ -2,8 +2,6 @@ import pandas as pd
 import time
 import argparse
 import os
-import matplotlib.pyplot as plt
-
 
 # --- Preprocessing ---
 def preprocess_sort(df, grouping_column="A", aggregation_column="B"):
@@ -83,45 +81,7 @@ def calculate_impact(sorted_df, grouped_df, grouping_column="A", aggregation_col
         .reset_index(drop=True)
     )
 
-# --- Plotting ---
-def plot_aggregation(df, grouping_column, aggregation_column, title, output_file):
-    """Plot the aggregated values of the DataFrame."""
-    aggregated_df = df.groupby(grouping_column)[aggregation_column].max().reset_index()
-    plt.figure(figsize=(10, 6))
-    plt.bar(aggregated_df[grouping_column], aggregated_df[aggregation_column], color='skyblue')
-    plt.xlabel(grouping_column)
-    plt.ylabel(f"MAX({aggregation_column})")
-    plt.title(title)
-    plt.grid(axis='y', linestyle='--', alpha=0.7)
-    plt.savefig(output_file, format='pdf')
-    plt.close()
-    print(f"Plot saved to {output_file}")
 
-
-def plot_impact_per_iteration(log_file, output_file):
-    """Plot the impact per iteration based on the iteration log."""
-    log_data = pd.read_csv(log_file)
-
-    if "Impact" not in log_data.columns or "Iteration" not in log_data.columns:
-        print("Error: Missing required columns in the log file.")
-        return
-
-    colors = log_data["Impact"].apply(lambda x: 'green' if x > 0 else ('yellow' if x == 0 else 'red')).tolist()
-
-    plt.figure(figsize=(10, 6))
-    for i, impact in enumerate(log_data["Impact"]):
-        plt.plot([log_data["Iteration"].iloc[i]], [impact], marker='o', markersize=8,
-                 color='black', markerfacecolor=colors[i], markeredgecolor='black')
-
-    plt.plot(log_data["Iteration"], log_data["Impact"], color='black', linestyle='-')
-
-    plt.xlabel("Iteration")
-    plt.ylabel("Impact")
-    plt.title("Impact per Iteration")
-    plt.grid(True, linestyle="--", alpha=0.7)
-    plt.savefig(output_file, format="pdf")
-    plt.close()
-    print(f"Impact per iteration plot saved to {output_file}")
 
 
 # --- Main Algorithm ---
@@ -228,14 +188,7 @@ if __name__ == "__main__":
     grouping_column = args.grouping_column
     aggregation_column = args.aggregation_column
     output_folder = args.output_folder
-    #plot_aggregation(df, grouping_column, aggregation_column, f"Before Algorithm{csv_file}", f"results/before_algorithm{csv_file}.pdf")
 
     # Run the algorithm
     result_df, output_csv = greedy_algorithm(df, grouping_column=grouping_column,
                                  aggregation_column=aggregation_column, output_csv=args.output_csv)
-
-    # Plot the final state
-    #plot_aggregation(result_df, grouping_column, aggregation_column, f"After Algorithm{csv_file}", f"results/after_algorithm.pdf{csv_file}")
-
-    impact_plot_file = os.path.join(output_folder, f"max_impact_per_iteration_{os.path.basename(csv_file)}.pdf")
-    plot_impact_per_iteration(output_csv, impact_plot_file)
