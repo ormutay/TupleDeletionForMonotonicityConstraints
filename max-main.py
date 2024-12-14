@@ -83,7 +83,7 @@ def calculate_impact(sorted_df, grouped_df, grouping_column="A", aggregation_col
         .reset_index(drop=True)
     )
 
-
+# --- Plotting ---
 def plot_aggregation(df, grouping_column, aggregation_column, title, output_file):
     """Plot the aggregated values of the DataFrame."""
     aggregated_df = df.groupby(grouping_column)[aggregation_column].max().reset_index()
@@ -101,7 +101,6 @@ def plot_aggregation(df, grouping_column, aggregation_column, title, output_file
 # --- Main Algorithm ---
 def greedy_algorithm(df, grouping_column="A", aggregation_column="B", output_csv="results/iteration_log.csv"):
     """Greedy algorithm to minimize Smvi by removing tuples."""
-    # Ensure output directory exists
     output_dir = os.path.dirname(output_csv)
     if output_dir and not os.path.exists(output_dir):
         os.makedirs(output_dir)
@@ -175,7 +174,7 @@ def greedy_algorithm(df, grouping_column="A", aggregation_column="B", output_csv
 
     return sorted_df
 
-
+# python/py -3.13 max-main.py <path_to_csv_file> --grouping_column <group_col> --aggregation_column <agg_col> --output_csv <path_to_output_csv>
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run the greedy algorithm on a specified CSV file.")
     parser.add_argument("csv_file", type=str, help="The path to the input CSV file.")
@@ -184,7 +183,6 @@ if __name__ == "__main__":
     parser.add_argument("--output_csv", type=str, default="processed_output.csv", help="Path for the output CSV file.")
     args = parser.parse_args()
 
-    # Check if the file exists
     csv_file = args.csv_file
     if not os.path.exists(csv_file):
         print(f"Error: The file '{csv_file}' does not exist.")
@@ -202,11 +200,11 @@ if __name__ == "__main__":
     # Plot the initial state
     grouping_column = args.grouping_column
     aggregation_column = args.aggregation_column
-    plot_aggregation(df, grouping_column, aggregation_column, f"Before Algorithm{csv_file}", f"results/before_algorithm{csv_file}.pdf")
+    #plot_aggregation(df, grouping_column, aggregation_column, f"Before Algorithm{csv_file}", f"results/before_algorithm{csv_file}.pdf")
 
     # Run the algorithm
     result_df = greedy_algorithm(df, grouping_column=grouping_column,
                                  aggregation_column=aggregation_column, output_csv=args.output_csv)
 
     # Plot the final state
-    plot_aggregation(result_df, grouping_column, aggregation_column, f"After Algorithm{csv_file}", f"results/after_algorithm.pdf{csv_file}")
+    #plot_aggregation(result_df, grouping_column, aggregation_column, f"After Algorithm{csv_file}", f"results/after_algorithm.pdf{csv_file}")

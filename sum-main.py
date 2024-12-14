@@ -2,6 +2,7 @@ import pandas as pd
 import time
 import argparse
 import os
+import matplotlib.pyplot as plt
 
 # --- Preprocessing ---
 def preprocess_sort(df, grouping_column="A", aggregation_column="B"):
@@ -22,7 +23,7 @@ def calculate_group_stats(sorted_df, agg_func, grouping_column="A", aggregation_
 
 # --- Group Updates ---
 
-def update_group_mvi(grouped_df, group_index, new_group_alpha, agg_func):
+def update_group_mvi(grouped_df, group_index, new_group_alpha):
     """Update MVI for the affected group (i) and its neighbors."""
     grouped_df.loc[group_index, "Alpha(A_i)"] = new_group_alpha
 
@@ -55,13 +56,26 @@ def find_tuple_removal_impact(sorted_df, grouped_df, group, agg_func, grouping_c
         temp_df = sorted_df.drop(index=row.name)
         remaining_group = temp_df[temp_df[grouping_column] == group]
         new_group_alpha = remaining_group[aggregation_column].apply(agg_func) if not remaining_group.empty else 0
-        updated_grouped_df = update_group_mvi(grouped_df.copy(), group_index, new_group_alpha, agg_func)
+        updated_grouped_df = update_group_mvi(grouped_df.copy(), group_index, new_group_alpha)
 
         impact = grouped_df["MVI"].sum() - updated_grouped_df["MVI"].sum()
         impacts.append((row.name, row[aggregation_column], impact))
 
     return impacts
 
+# --- Plotting ---
+def plot_aggregation(df, grouping_column, aggregation_column, title, output_file):
+    """Plot the aggregated values of the DataFrame."""
+    aggregated_df = df.groupby(grouping_column)[aggregation_column].max().reset_index()
+    plt.figure(figsize=(10, 6))
+    plt.bar(aggregated_df[grouping_column], aggregated_df[aggregation_column], color='skyblue')
+    plt.xlabel(grouping_column)
+    plt.ylabel(f"SUM({aggregation_column})")
+    plt.title(title)
+    plt.grid(axis='y', linestyle='--', alpha=0.7)
+    plt.savefig(output_file, format='pdf')
+    plt.close()
+    print(f"Plot saved to {output_file}")
 
 # --- Main Algorithm ---
 def greedy_algorithm(df, agg_func, output_csv="results/iteration_log.csv", grouping_column="A", aggregation_column="B"):
@@ -135,9 +149,9 @@ def greedy_algorithm(df, agg_func, output_csv="results/iteration_log.csv", group
             "Fallback Used": fallback_used
         })
 
-
         iteration += 1
         tuple_removals += 1
+        print("finished iteration", iteration)
 
     end_time = time.time()
     total_time = end_time - start_time
@@ -153,7 +167,7 @@ def greedy_algorithm(df, agg_func, output_csv="results/iteration_log.csv", group
     return sorted_df
 
 
-# python sum-main.py <path_to_csv_file> --grouping_column <group_col> --aggregation_column <agg_col> --output_csv <path_to_output_csv>
+# python/py -3.13 sum-main.py <path_to_csv_file> --grouping_column <group_col> --aggregation_column <agg_col> --output_csv <path_to_output_csv>
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run the greedy algorithm on a specified CSV file.")
     parser.add_argument("csv_file", type=str, help="The path to the input CSV file.")
@@ -168,9 +182,17 @@ if __name__ == "__main__":
         exit(1)
 
     print(f"Processing file: {csv_file}")
-    df = pd.read_csv(csv_file)
+    try:
+        df = pd.read_csv(csv_file, usecols=[args.grouping_column, args.aggregation_column])
+    except ValueError as e:
+        print(f"Error: {e}. Ensure the specified columns exist in the CSV file.")
+        exit(1)
 
-    result_df = greedy_algorithm(
-        df, agg_func="sum", output_csv=args.output_csv,
-        grouping_column=args.grouping_column, aggregation_column=args.aggregation_column
-    )
+    grouping_column = args.grouping_column
+    aggregation_column = args.aggregation_column
+   #plot_aggregation(df, grouping_column, aggregation_column, f"Before Algorithm - {csv_file}", f"results/before_algorithm-{csv_file}.pdf")
+
+    result_df = greedy_algorithm(df, agg_func="sum", output_csv=args.output_csv,
+                                 grouping_column=grouping_column, aggregation_column=aggregation_column)
+
+    #plot_aggregation(result_df, grouping_column, aggregation_column, f"After Algorithm - {csv_file}", f"results/after_algorithm-{csv_file}.pdf")
