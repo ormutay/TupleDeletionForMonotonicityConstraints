@@ -42,7 +42,7 @@ def run_algorithm(command, is_dp=False, timeout=600):
         return {"time": None, "rows_removed": None}  # Return None for timeout
 
 # Helper function to process a single dataset
-def process_single_dataset(dataset_path, greedy_algo_path, dp_algo_path, agg_function, timeout, results_folder, group_column, agg_column):
+def process_single_dataset(dataset_path, greedy_algo_path, dp_algo_path, agg_function, timeout, results_folder, group_column, agg_column, output_folder):
     print(f"Processing dataset: {dataset_path}")
     filename = os.path.basename(dataset_path)
 
@@ -82,7 +82,7 @@ def process_single_dataset(dataset_path, greedy_algo_path, dp_algo_path, agg_fun
     }
 
 
-def process_datasets_parallel(dataset_folder, greedy_algo_path, dp_algo_path, agg_function, timeout, results_folder, grouping_column="A", aggregation_column="B"):
+def process_datasets_parallel(dataset_folder, greedy_algo_path, dp_algo_path, agg_function, timeout, results_folder, grouping_column="A", aggregation_column="B", output_folder="output"):
     print("Collecting datasets...")
     dataset_paths = [
         os.path.join(dataset_folder, f) for f in os.listdir(dataset_folder) if f.endswith(".csv")
@@ -93,7 +93,7 @@ def process_datasets_parallel(dataset_folder, greedy_algo_path, dp_algo_path, ag
     with ProcessPoolExecutor() as executor:
         future_to_dataset = {
             executor.submit(process_single_dataset, dataset, greedy_algo_path, dp_algo_path, agg_function, timeout,
-                            results_folder, grouping_column, aggregation_column): dataset
+                            results_folder, grouping_column, aggregation_column, output_folder): dataset
             for dataset in dataset_paths
         }
         for future in as_completed(future_to_dataset):
@@ -130,7 +130,7 @@ def plot_results(results, output_folder, x_axis, x_label):
     plt.title(f"Percentage of Rows Removed by Algorithms ({x_label})")
     plt.legend()
     plt.grid(True)
-    plt.savefig(os.path.join(output_folder, f"rows_removed_percentage_comparison_{x_axis}.png"))
+    plt.savefig(os.path.join(output_folder, f"rows_removed_percentage_comparison_{x_axis}.pdf"), format='pdf')
     plt.show()
 
     # Plot 2: Execution Time vs. x_axis
@@ -142,8 +142,10 @@ def plot_results(results, output_folder, x_axis, x_label):
     plt.title(f"Execution Time of Algorithms ({x_label})")
     plt.legend()
     plt.grid(True)
-    plt.savefig(os.path.join(output_folder, f"execution_time_comparison_{x_axis}.png"))
+    plt.savefig(os.path.join(output_folder, f"execution_time_comparison_{x_axis}.pdf"), format='pdf')
     plt.show()
+
+    print(f"Plots saved successfully under {output_folder} folder.")
 
 
 #python/py -3.13 compare_algorithms.py --agg_function <agg_function> --dataset_folder <dataset_folder> --results_folder <results_folder> --timeout_min <timeout_min> --grouping_column <grouping_column> --aggregation_column <aggregation_column>
@@ -164,7 +166,7 @@ if __name__ == "__main__":
     aggregation_column = args.aggregation_column
 
     base_folder = args.dataset_folder
-    result_folder = f"{results_base_folder}/{agg_function}"
+    result_folder = os.path.join(results_base_folder, agg_function)
 
     for folder in ["rows", "groups", "violations"]:
         dataset_folder = os.path.join(base_folder, folder, "datasets")
@@ -173,8 +175,13 @@ if __name__ == "__main__":
 
         results = process_datasets_parallel(dataset_folder, "max-main.py", "Trendline-Outlier-Detection/main.py",
                                             agg_function, timeout=timeout, results_folder=result_folder,
-                                            grouping_column=grouping_column, aggregation_column=aggregation_column)
+                                            grouping_column=grouping_column, aggregation_column=aggregation_column,
+                                            output_folder=output_folder)
         if not results.empty:
             results.to_csv(os.path.join(output_folder, "comparison_results.csv"), index=False)
             if folder == "rows":
                 plot_results(results, output_folder, "num_rows", "Number of Rows")
+            elif folder == "groups":
+                plot_results(results, output_folder, "num_groups", "Number of Groups")
+            elif folder == "violations":
+                plot_results(results, output_folder, "violation_percentage", "Violation Percentage")

@@ -77,6 +77,33 @@ def plot_aggregation(df, grouping_column, aggregation_column, title, output_file
     plt.close()
     print(f"Plot saved to {output_file}")
 
+
+def plot_impact_per_iteration(log_file, output_file):
+    """Plot the impact per iteration based on the iteration log."""
+    log_data = pd.read_csv(log_file)
+
+    if "Impact" not in log_data.columns or "Iteration" not in log_data.columns:
+        print("Error: Missing required columns in the log file.")
+        return
+
+    colors = log_data["Impact"].apply(lambda x: 'green' if x > 0 else ('yellow' if x == 0 else 'red')).tolist()
+
+    plt.figure(figsize=(10, 6))
+    for i, impact in enumerate(log_data["Impact"]):
+        plt.plot([log_data["Iteration"].iloc[i]], [impact], marker='o', markersize=8,
+                 color='black', markerfacecolor=colors[i], markeredgecolor='black')
+
+    plt.plot(log_data["Iteration"], log_data["Impact"], color='black', linestyle='-')
+
+    plt.xlabel("Iteration")
+    plt.ylabel("Impact")
+    plt.title("Impact per Iteration")
+    plt.grid(True, linestyle="--", alpha=0.7)
+    plt.savefig(output_file, format="pdf")
+    plt.close()
+    print(f"Impact per iteration plot saved to {output_file}")
+
+
 # --- Main Algorithm ---
 def greedy_algorithm(df, agg_func, output_csv="results/iteration_log.csv", grouping_column="A", aggregation_column="B"):
     """Greedy algorithm to minimize Smvi by removing tuples only and log iterations to CSV."""
@@ -164,7 +191,7 @@ def greedy_algorithm(df, agg_func, output_csv="results/iteration_log.csv", group
     pd.DataFrame(iteration_logs).to_csv(output_csv, index=False)
     print(f"Iteration log saved to {output_csv}")
 
-    return sorted_df
+    return sorted_df, output_csv
 
 
 # python/py -3.13 sum-main.py <path_to_csv_file> --grouping_column <group_col> --aggregation_column <agg_col> --output_csv <path_to_output_csv>
@@ -174,6 +201,7 @@ if __name__ == "__main__":
     parser.add_argument("--grouping_column", type=str, default="A", help="The name of the grouping column.")
     parser.add_argument("--aggregation_column", type=str, default="B", help="The name of the aggregation column.")
     parser.add_argument("--output_csv", type=str, default="results/iteration_log.csv", help="Path for the output CSV file.")
+    parser.add_argument("--output_folder", type=str, default="results", help="Folder to save the output files.")
     args = parser.parse_args()
 
     csv_file = args.csv_file
@@ -190,9 +218,13 @@ if __name__ == "__main__":
 
     grouping_column = args.grouping_column
     aggregation_column = args.aggregation_column
+    output_folder = args.output_folder
    #plot_aggregation(df, grouping_column, aggregation_column, f"Before Algorithm - {csv_file}", f"results/before_algorithm-{csv_file}.pdf")
 
-    result_df = greedy_algorithm(df, agg_func="sum", output_csv=args.output_csv,
+    result_df, output_csv = greedy_algorithm(df, agg_func="sum", output_csv=args.output_csv,
                                  grouping_column=grouping_column, aggregation_column=aggregation_column)
 
     #plot_aggregation(result_df, grouping_column, aggregation_column, f"After Algorithm - {csv_file}", f"results/after_algorithm-{csv_file}.pdf")
+
+    impact_plot_file = os.path.join(output_folder, f"sum_impact_per_iteration_{os.path.basename(csv_file)}.pdf")
+    plot_impact_per_iteration(output_csv, impact_plot_file)
