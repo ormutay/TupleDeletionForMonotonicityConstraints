@@ -18,7 +18,7 @@ def calculate_group_stats(sorted_df, grouping_column="A", aggregation_column="B"
     """
     grouped_df = sorted_df.groupby(grouping_column).first().reset_index()
     grouped_df.rename(columns={aggregation_column: "Alpha(A_i)"}, inplace=True)
-    grouped_df["MVI"] = grouped_df["Alpha(A_i)"].diff(-1).fillna(0).clip(lower=0)  # Use clip for clarity
+    grouped_df["MVI"] = grouped_df["Alpha(A_i)"].diff(-1).fillna(0).clip(lower=0)
     return grouped_df
 
 
@@ -100,7 +100,7 @@ def find_options(sorted_df, grouped_df, group, grouping_column="A", aggregation_
     impact_max_tuples = grouped_df["MVI"].sum() - updated_grouped_df["MVI"].sum()
 
     # Option 2 - Next group removal
-    impact_group_removal, rows_removed = calculate_next_group_removal_impact(sorted_df, grouped_df, group_index)
+    impact_group_removal, rows_removed = calculate_next_group_removal_impact(sorted_df, grouped_df, group_index, grouping_column)
 
     return {
         "tuple_removal": (max_tuples.index.tolist(), group, max_value, impact_max_tuples, len(max_tuples)),
@@ -121,8 +121,8 @@ def calculate_impact(sorted_df, grouped_df, grouping_column="A", aggregation_col
     impacts = []
     for _, row in grouped_df[grouped_df["MVI"] > 0].iterrows():
         group = row[grouping_column]
-        options = find_options(sorted_df, grouped_df, group)
-        impacts.append(options["tuple_removal"])  # Tuple removal includes multiple tuples now
+        options = find_options(sorted_df, grouped_df, group, grouping_column, aggregation_column)
+        impacts.append(options["tuple_removal"])
         if options["group_removal"]:
             impacts.append(options["group_removal"])
     return (
@@ -136,7 +136,7 @@ def calculate_impact(sorted_df, grouped_df, grouping_column="A", aggregation_col
 # --- Main Algorithm ---
 def greedy_algorithm(df, grouping_column="A", aggregation_column="B", output_csv="results/iteration_log.csv"):
     """Greedy algorithm to minimize Smvi by removing tuples or groups."""
-    # Ensure output directory exists
+
     output_dir = os.path.dirname(output_csv)
     if output_dir and not os.path.exists(output_dir):
         os.makedirs(output_dir)
@@ -148,7 +148,6 @@ def greedy_algorithm(df, grouping_column="A", aggregation_column="B", output_csv
     group_removals = 0
     start_time = time.time()
 
-    # Collect iteration details for CSV
     iteration_logs = []
 
     while True:
@@ -171,7 +170,7 @@ def greedy_algorithm(df, grouping_column="A", aggregation_column="B", output_csv
 
         max_impact = impact_df.iloc[0]
         deleted_group = False
-        if isinstance(max_impact["Index"], list):  # Tuple removal for multiple tuples
+        if isinstance(max_impact["Index"], list):  # Tuple(s) removal
             removed_group_value = max_impact[grouping_column]
             removed_aggregation_value = max_impact[aggregation_column]
             num_removed = len(max_impact["Index"])
@@ -206,7 +205,6 @@ def greedy_algorithm(df, grouping_column="A", aggregation_column="B", output_csv
     print(f"Total group removals: {group_removals}")
     print(f"Total execution time: {total_time:.4f} seconds")
 
-    # Write iteration logs to CSV
     pd.DataFrame(iteration_logs).to_csv(output_csv, index=False)
     print(f"Iteration log saved to {output_csv}")
 
@@ -292,5 +290,14 @@ if __name__ == "__main__":
         exit(1)
 
     print(f"Processing file: {csv_file}")
-    df = pd.read_csv(csv_file)
-    result_df = greedy_algorithm(df, args.grouping_column, args.aggregation_column, args.output_csv)
+
+    # Load only the necessary columns
+    try:
+        df = pd.read_csv(csv_file, usecols=[args.grouping_column, args.aggregation_column])
+    except ValueError as e:
+        print(f"Error: {e}. Ensure the specified columns exist in the CSV file.")
+        exit(1)
+
+    # Run the algorithm
+    result_df = greedy_algorithm(df, grouping_column=args.grouping_column,
+                                 aggregation_column=args.aggregation_column, output_csv=args.output_csv)
