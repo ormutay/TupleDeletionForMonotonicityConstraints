@@ -82,8 +82,6 @@ def calculate_impact(sorted_df, grouped_df, grouping_column="A", aggregation_col
     )
 
 
-
-
 # --- Main Algorithm ---
 def greedy_algorithm(df, grouping_column="A", aggregation_column="B", output_csv="results/iteration_log.csv"):
     """Greedy algorithm to minimize Smvi by removing tuples."""

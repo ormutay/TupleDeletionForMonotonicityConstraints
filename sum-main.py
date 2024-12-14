@@ -43,9 +43,8 @@ def update_group_mvi(grouped_df, group_index, new_group_alpha):
 
     return grouped_df
 
-
 # --- Impact Calculation ---
-def find_tuple_removal_impact(sorted_df, grouped_df, group, agg_func, grouping_column="A", aggregation_column="B"):
+def find_tuple_removal_impact(sorted_df, grouped_df, group, agg_func, grouping_column="A", aggregation_column="B", group_sums=None):
     """Simulate removing each tuple in a group and calculate its impact."""
     impacts = []
     group_index = grouped_df[grouped_df[grouping_column] == group].index[0]
@@ -54,14 +53,22 @@ def find_tuple_removal_impact(sorted_df, grouped_df, group, agg_func, grouping_c
     for _, row in group_tuples.iterrows():
         temp_df = sorted_df.drop(index=row.name)
         remaining_group = temp_df[temp_df[grouping_column] == group]
-        new_group_alpha = remaining_group[aggregation_column].apply(agg_func) if not remaining_group.empty else 0
+
+        if group_sums is not None:
+            group_sums[group] -= row[aggregation_column]
+            new_group_alpha = group_sums[group]
+        else:
+            new_group_alpha = remaining_group[aggregation_column].apply(agg_func) if not remaining_group.empty else 0
+
         updated_grouped_df = update_group_mvi(grouped_df.copy(), group_index, new_group_alpha)
 
         impact = grouped_df["MVI"].sum() - updated_grouped_df["MVI"].sum()
         impacts.append((row.name, row[aggregation_column], impact))
 
-    return impacts
+        if group_sums is not None:
+            group_sums[group] += row[aggregation_column]  # Restore the sum for subsequent calculations
 
+    return impacts
 
 # --- Main Algorithm ---
 def greedy_algorithm(df, agg_func, output_csv="results/iteration_log.csv", grouping_column="A", aggregation_column="B"):
@@ -75,6 +82,9 @@ def greedy_algorithm(df, agg_func, output_csv="results/iteration_log.csv", group
 
     tuple_removals = 0
     start_time = time.time()
+
+    # Precompute initial sums for each group
+    group_sums = sorted_df.groupby(grouping_column)[aggregation_column].sum().to_dict()
 
     # Collect iteration details for CSV
     iteration_logs = []
@@ -94,7 +104,7 @@ def greedy_algorithm(df, agg_func, output_csv="results/iteration_log.csv", group
         max_impact = None
         for _, row in grouped_df[grouped_df["MVI"] > 0].iterrows():
             group = row[grouping_column]
-            impacts = find_tuple_removal_impact(sorted_df, grouped_df, group, agg_func, grouping_column, aggregation_column)
+            impacts = find_tuple_removal_impact(sorted_df, grouped_df, group, agg_func, grouping_column, aggregation_column, group_sums)
             best_impact = max(impacts, key=lambda x: x[2])  # Highest impact
             if max_impact is None or best_impact[2] > max_impact[2]:
                 max_impact = best_impact
@@ -106,7 +116,7 @@ def greedy_algorithm(df, agg_func, output_csv="results/iteration_log.csv", group
             max_impact = None
             for _, row in grouped_df[grouped_df["MVI"] > 0].iterrows():
                 group = row[grouping_column]
-                impacts = find_tuple_removal_impact(sorted_df, grouped_df, group, agg_func, grouping_column, aggregation_column)
+                impacts = find_tuple_removal_impact(sorted_df, grouped_df, group, agg_func, grouping_column, aggregation_column, group_sums)
                 fallback_impact = max(impacts, key=lambda x: x[2])  # Largest impact (may be ≤ 0)
                 if max_impact is None or fallback_impact[2] > max_impact[2]:
                     max_impact = fallback_impact
@@ -116,11 +126,13 @@ def greedy_algorithm(df, agg_func, output_csv="results/iteration_log.csv", group
                 print("No valid impacts found. Stopping.")
                 break
 
-
         # Retrieve grouping and aggregation column values
         removed_tuple = sorted_df.loc[max_impact[0]]
         removed_group_value = removed_tuple[grouping_column]
         removed_aggregation_value = removed_tuple[aggregation_column]
+
+        # Update group sum
+        group_sums[removed_group_value] -= removed_aggregation_value
 
         # Remove the tuple with the largest impact (positive or fallback)
         sorted_df = sorted_df.drop(index=max_impact[0]).reset_index(drop=True)

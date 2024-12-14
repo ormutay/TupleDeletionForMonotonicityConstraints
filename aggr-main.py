@@ -57,7 +57,7 @@ def calculate_tuple_removal_impact_max(sorted_df, grouped_df, group, grouping_co
     impact = grouped_df["MVI"].sum() - updated_grouped_df["MVI"].sum()
     return [(idx, max_value, impact) for idx in max_tuples.index]
 
-def calculate_tuple_removal_impact_sum(sorted_df, grouped_df, group, grouping_column="A", aggregation_column="B"):
+def calculate_tuple_removal_impact_sum(sorted_df, grouped_df, group, grouping_column="A", aggregation_column="B", group_sums=None):
     """Calculate the impact of removing each tuple in a group individually."""
     group_index = grouped_df[grouped_df[grouping_column] == group].index[0]
     group_tuples = sorted_df[sorted_df[grouping_column] == group]
@@ -66,16 +66,25 @@ def calculate_tuple_removal_impact_sum(sorted_df, grouped_df, group, grouping_co
     for _, row in group_tuples.iterrows():
         temp_df = sorted_df.drop(index=row.name)
         remaining_group = temp_df[temp_df[grouping_column] == group]
-        new_group_alpha = remaining_group[aggregation_column].sum() if not remaining_group.empty else 0
+
+        if group_sums is not None:
+            group_sums[group] -= row[aggregation_column]
+            new_group_alpha = group_sums[group]
+        else:
+            new_group_alpha = remaining_group[aggregation_column].sum() if not remaining_group.empty else 0
+
         updated_grouped_df = update_group_mvi(grouped_df.copy(), group_index, new_group_alpha)
 
         impact = grouped_df["MVI"].sum() - updated_grouped_df["MVI"].sum()
         impacts.append((row.name, row[aggregation_column], impact))
 
+        if group_sums is not None:
+            group_sums[group] += row[aggregation_column]  # Restore the sum for subsequent calculations
+
     return impacts
 
 
-def calculate_tuple_removal_impact_avg(sorted_df, grouped_df, group, grouping_column="A", aggregation_column="B"):
+def calculate_tuple_removal_impact_avg(sorted_df, grouped_df, group, grouping_column="A", aggregation_column="B", group_sums=None, group_counts=None):
     """Calculate the impact of removing each tuple in a group individually for AVG."""
     group_index = grouped_df[grouped_df[grouping_column] == group].index[0]
     group_tuples = sorted_df[sorted_df[grouping_column] == group]
@@ -84,15 +93,22 @@ def calculate_tuple_removal_impact_avg(sorted_df, grouped_df, group, grouping_co
     for _, row in group_tuples.iterrows():
         temp_df = sorted_df.drop(index=row.name)
         remaining_group = temp_df[temp_df[grouping_column] == group]
-        if not remaining_group.empty:
-            new_group_alpha = remaining_group[aggregation_column].mean()
+
+        if group_sums is not None and group_counts is not None:
+            group_sums[group] -= row[aggregation_column]
+            group_counts[group] -= 1
+            new_group_alpha = group_sums[group] / group_counts[group] if group_counts[group] > 0 else 0
         else:
-            new_group_alpha = 0
+            new_group_alpha = remaining_group[aggregation_column].mean() if not remaining_group.empty else 0
 
         updated_grouped_df = update_group_mvi(grouped_df.copy(), group_index, new_group_alpha)
 
         impact = grouped_df["MVI"].sum() - updated_grouped_df["MVI"].sum()
         impacts.append((row.name, row[aggregation_column], impact))
+
+        if group_sums is not None and group_counts is not None:
+            group_sums[group] += row[aggregation_column]  # Restore the sum for subsequent calculations
+            group_counts[group] += 1  # Restore the count
 
     return impacts
 
@@ -109,6 +125,13 @@ def greedy_algorithm(df, agg_func, grouping_column="A", aggregation_column="B", 
     start_time = time.time()
     iteration_logs = []
 
+    # Precompute initial sums and counts for each group if the aggregation function is sum or avg
+    group_sums = None
+    group_counts = None
+    if agg_func == sum or agg_func == pd.Series.mean:
+        group_sums = sorted_df.groupby(grouping_column)[aggregation_column].sum().to_dict()
+        group_counts = sorted_df.groupby(grouping_column)[aggregation_column].count().to_dict()
+
     while True:
         grouped_df = calculate_group_stats(sorted_df, agg_func, grouping_column, aggregation_column)
         Smvi = grouped_df["MVI"].sum()
@@ -122,12 +145,12 @@ def greedy_algorithm(df, agg_func, grouping_column="A", aggregation_column="B", 
 
         for _, row in grouped_df[grouped_df["MVI"] > 0].iterrows():
             group = row[grouping_column]
-            if agg_func == "MAX":
+            if agg_func == max:
                 impacts.extend(calculate_tuple_removal_impact_max(sorted_df, grouped_df, group, grouping_column, aggregation_column))
-            elif agg_func == "SUM":
-                impacts.extend(calculate_tuple_removal_impact_sum(sorted_df, grouped_df, group, grouping_column, aggregation_column))
-            elif agg_func == "AVG":
-                impacts.extend(calculate_tuple_removal_impact_avg(sorted_df, grouped_df, group, grouping_column, aggregation_column))
+            elif agg_func == sum:
+                impacts.extend(calculate_tuple_removal_impact_sum(sorted_df, grouped_df, group, grouping_column, aggregation_column, group_sums))
+            elif agg_func == pd.Series.mean:
+                impacts.extend(calculate_tuple_removal_impact_avg(sorted_df, grouped_df, group, grouping_column, aggregation_column, group_sums, group_counts))
             else:
                 raise ValueError("Unsupported aggregation function")
 
@@ -144,6 +167,12 @@ def greedy_algorithm(df, agg_func, grouping_column="A", aggregation_column="B", 
 
         tuples_to_remove = [idx for idx, _, _ in impacts if _ == max_impact[1]] if agg_func == max else [max_impact[0]]
         sorted_df = sorted_df.drop(index=tuples_to_remove).reset_index(drop=True)
+
+        if agg_func == sum or agg_func == pd.Series.mean:
+            for idx in tuples_to_remove:
+                group = sorted_df.loc[idx, grouping_column]
+                group_sums[group] -= sorted_df.loc[idx, aggregation_column]
+                group_counts[group] -= 1
 
         iteration_logs.append({
             "Iteration": iteration,
