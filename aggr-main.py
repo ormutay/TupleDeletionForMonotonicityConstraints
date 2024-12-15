@@ -159,32 +159,40 @@ def greedy_algorithm(df, agg_func, grouping_column="A", aggregation_column="B", 
             break
 
         max_impact = max(impacts, key=lambda x: x[2])
+        idx_max_impact = max_impact[0]
+        value_max_impact = max_impact[1]
+        impact_max_impact = max_impact[2]
 
         fallback_used = False
-        if max_impact[2] <= 0:
+        if impact_max_impact <= 0:
             print("No positive impacts found. Using fallback strategy.")
             fallback_used = True
 
-        tuples_to_remove = [idx for idx, _, _ in impacts if _ == max_impact[1]] if agg_func == max else [max_impact[0]]
+        if agg_func == max:
+            tuples_to_remove = [idx for idx, max_value, impact in impacts if max_value == value_max_impact] #todo check if it is only deleting from the same group
+            num_tuples_to_remove = len(tuples_to_remove)
+        else:
+            tuples_to_remove = idx_max_impact
+            num_tuples_to_remove = 1
+
         sorted_df = sorted_df.drop(index=tuples_to_remove).reset_index(drop=True)
 
-        if agg_func == sum or agg_func == pd.Series.mean:
-            for idx in tuples_to_remove:
-                group = sorted_df.loc[idx, grouping_column]
-                group_sums[group] -= sorted_df.loc[idx, aggregation_column]
-                group_counts[group] -= 1
+        if agg_func == sum or agg_func == pd.Series.mean: # suppose to be one tuple in this case
+            group = sorted_df.loc[idx_max_impact, grouping_column]
+            group_sums[group] -= sorted_df.loc[idx_max_impact, aggregation_column]
+            group_counts[group] -= 1
 
         iteration_logs.append({
             "Iteration": iteration,
             "Current Smvi": Smvi,
-            "Tuple Removed Group Value": sorted_df.loc[tuples_to_remove[0], grouping_column] if tuples_to_remove else None,
-            "Tuple Removed Aggregation Value": max_impact[1],
-            "Number of Tuples Removed": len(tuples_to_remove),
-            "Impact": max_impact[2],
+            "Tuple Removed Group Value": sorted_df.loc[idx_max_impact, grouping_column] if tuples_to_remove else None,
+            "Tuple Removed Aggregation Value": value_max_impact,
+            "Number of Tuples Removed": num_tuples_to_remove,
+            "Impact": impact_max_impact,
             "Fallback Used": fallback_used
         })
 
-        tuple_removals += len(tuples_to_remove)
+        tuple_removals += num_tuples_to_remove
         iteration += 1
 
     end_time = time.time()
@@ -192,6 +200,7 @@ def greedy_algorithm(df, agg_func, grouping_column="A", aggregation_column="B", 
     print(f"Total execution time: {end_time - start_time:.4f} seconds")
 
     pd.DataFrame(iteration_logs).to_csv(output_csv, index=False)
+    print(f"Iteration logs saved to {output_csv}")
     return sorted_df
 
 # --- Main Entry Point ---
@@ -202,7 +211,7 @@ if __name__ == "__main__":
     parser.add_argument("agg_func", type=str, choices=["sum", "max", "avg"], help="The aggregation function to use.")
     parser.add_argument("--grouping_column", type=str, default="A", help="The column to group by.")
     parser.add_argument("--aggregation_column", type=str, default="B", help="The column to aggregate.")
-    parser.add_argument("--output_csv", type=str, default="results/iteration_log.csv", help="The path for the output CSV file.")
+    parser.add_argument("--output_folder", type=str, default="results_csv", help="The folder to save the output CSV files.")
     args = parser.parse_args()
 
     csv_name = os.path.basename(args.csv_file)  # Extract the file name without the path
@@ -213,11 +222,14 @@ if __name__ == "__main__":
 
     df = pd.read_csv(args.csv_file)
 
-    result_df = greedy_algorithm(df, agg_func, grouping_column=args.grouping_column, aggregation_column=args.aggregation_column, output_csv=args.output_csv)
+    output_csv = os.path.join(args.output_folder, f"logs-{csv_name}-{agg_func.__name__}.csv")
+    result_df = greedy_algorithm(df, agg_func, grouping_column=args.grouping_column, aggregation_column=args.aggregation_column, output_csv=output_csv)
+    print("Finished running the greedy algorithm.")
 
+    print("Plotting results...")
     # Plot aggregated values before and after the algorithm
-    plot_aggregation(df, args.grouping_column, args.aggregation_column, f"Before Algorithm ({agg_func.__name__.upper()})", "results_plots/before_algorithm.pdf", agg_func)
-    plot_aggregation(result_df, args.grouping_column, args.aggregation_column, f"After Algorithm ({agg_func.__name__.upper()})", "results_plots/after_algorithm.pdf", agg_func)
+    plot_aggregation(df, args.grouping_column, args.aggregation_column, f"Before Algorithm - {csv_name}({agg_func.__name__.upper()})", f"results_plots/before_algorithm-{csv_name}.pdf", agg_func)
+    plot_aggregation(result_df, args.grouping_column, args.aggregation_column, f"After Algorithm - {csv_name}({agg_func.__name__.upper()})", f"results_plots/after_algorithm.pdf-{csv_name}.pdf", agg_func)
 
     # Plot impact per iteration
-    plot_impact_per_iteration(args.output_csv, "results_plots/impact_per_iteration.pdf")
+    plot_impact_per_iteration(output_csv, f"results_plots/impact_per_iteration-{csv_name}.pdf")
