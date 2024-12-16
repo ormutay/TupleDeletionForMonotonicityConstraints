@@ -1,10 +1,18 @@
 import pandas as pd
 import matplotlib.pyplot as plt
+import numpy as np
+import os
 
 # --- Plotting ---
 def plot_aggregation(df, grouping_column, aggregation_column, title, output_file, agg_func):
     """Plot the aggregated values of the DataFrame."""
+    if agg_func == max:
+        agg_func = np.maximum.reduce  # Handles FutureWarning
     aggregated_df = df.groupby(grouping_column)[aggregation_column].apply(agg_func).reset_index()
+
+    # Ensure the directory exists
+    os.makedirs(os.path.dirname(output_file), exist_ok=True)
+
     plt.figure(figsize=(10, 6))
     plt.bar(aggregated_df[grouping_column], aggregated_df[aggregation_column], color='skyblue')
     plt.xlabel(grouping_column)
