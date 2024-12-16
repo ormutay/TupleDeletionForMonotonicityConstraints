@@ -120,44 +120,45 @@ def plot_dataset(df, group_agg, agg_func_name, output_folder, index, name_suffix
     plt.close()
 
 
+def run_dataset_generation(configurations, num_datasets_per_setting):
+    for config in configurations:
+        for param_value in config['range']:
+            for i in range(num_datasets_per_setting):
+                for agg_func in config['agg_funcs']:
+                    create_dataset(
+                        num_groups=config.get('num_groups', param_value),
+                        num_rows=config.get('num_rows', param_value),
+                        agg_func_name=agg_func,
+                        output_folder=f"dataset-{agg_func}-w7/{config['folder']}",
+                        index=i,
+                        violations_percentage=config.get('violations_percentage', param_value),
+                        name_suffix=f"{agg_func}_g{config.get('num_groups', param_value)}_r{config.get('num_rows', param_value)}_v{config.get('violations_percentage', param_value)}"
+                    )
+
 if __name__ == "__main__":
-    num_datasets_per_setting = 3  # Generate 3 datasets for each setting
+    num_datasets_per_setting = 3  # Number of datasets per setting
+    configurations = [
+        {
+            'range': range(100, 300, 100),
+            'folder': 'rows',
+            'agg_funcs': ['sum', 'max', 'avg'],
+            'num_groups': 10,
+            'violations_percentage': 10,
+        },
+        {
+            'range': range(5, 15, 5),
+            'folder': 'groups',
+            'agg_funcs': ['sum', 'max', 'avg'],
+            'num_rows': 500,
+            'violations_percentage': 10,
+        },
+        {
+            'range': range(5, 15, 5),
+            'folder': 'violations',
+            'agg_funcs': ['sum', 'max', 'avg'],
+            'num_groups': 10,
+            'num_rows': 500,
+        }
+    ]
 
-    # Case 1: rows from 100 to 1000 in increments of 100
-    for num_rows in range(100, 300, 100):
-        for i in range(num_datasets_per_setting):
-            create_dataset(num_groups=10, num_rows=num_rows, agg_func_name="sum", output_folder="dataset-sum-w7/rows",
-                           index=i, violations_percentage=10,
-                           name_suffix=f"sum_g10_r{num_rows}_v10")
-            create_dataset(num_groups=10, num_rows=num_rows, agg_func_name="max", output_folder="dataset-max-w7/rows",
-                           index=i, violations_percentage=10,
-                           name_suffix=f"max_g10_r{num_rows}_v10")
-            create_dataset(num_groups=10, num_rows=num_rows, agg_func_name="avg", output_folder="dataset-avg-w7/rows",
-                           index=i, violations_percentage=10,
-                           name_suffix=f"avg_g10_r{num_rows}_v10")
-
-    # Case 2: groups from 5 to 50 in increments of 5
-    for num_groups in range(5, 15, 5):
-        for i in range(num_datasets_per_setting):
-            create_dataset(num_groups=num_groups, num_rows=500, agg_func_name="sum", output_folder="dataset-sum-w7/groups",
-                           index=i, violations_percentage=10,
-                           name_suffix=f"sum_g{num_groups}_r500_v10")
-            create_dataset(num_groups=num_groups, num_rows=500, agg_func_name="max", output_folder="dataset-max-w7/groups",
-                           index=i, violations_percentage=10,
-                           name_suffix=f"max_g{num_groups}_r500_v10")
-            create_dataset(num_groups=num_groups, num_rows=500, agg_func_name="avg", output_folder="dataset-avg-w7/groups",
-                           index=i, violations_percentage=10,
-                           name_suffix=f"avg_g{num_groups}_r500_v10")
-
-    #Case 3: violations_percentage from 5 to 50 in increments of 5
-    for violations_percentage in range(5, 15, 5):
-        for i in range(num_datasets_per_setting):
-            create_dataset(num_groups=10, num_rows=500, agg_func_name="sum", output_folder="dataset-sum-w7/violations",
-                           index=i, violations_percentage=violations_percentage,
-                           name_suffix=f"sum_g10_r500_v{violations_percentage}")
-            create_dataset(num_groups=10, num_rows=500, agg_func_name="max", output_folder="dataset-max-w7/violations",
-                           index=i, violations_percentage=violations_percentage,
-                           name_suffix=f"max_g10_r500_v{violations_percentage}")
-            create_dataset(num_groups=10, num_rows=500, agg_func_name="avg", output_folder="dataset-avg-w7/violations",
-                           index=i, violations_percentage=violations_percentage,
-                           name_suffix=f"avg_g10_r500_v{violations_percentage}")
+    run_dataset_generation(configurations, num_datasets_per_setting)
