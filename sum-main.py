@@ -162,7 +162,7 @@ def greedy_algorithm(df, agg_func, output_csv="results/iteration_log.csv", group
     pd.DataFrame(iteration_logs).to_csv(output_csv, index=False)
     print(f"Iteration log saved to {output_csv}")
 
-    return sorted_df, output_csv
+    return sorted_df
 
 
 # python/py -3.13 sum-main.py <path_to_csv_file> --grouping_column <group_col> --aggregation_column <agg_col> --output_csv <path_to_output_csv>
@@ -171,8 +171,7 @@ if __name__ == "__main__":
     parser.add_argument("csv_file", type=str, help="The path to the input CSV file.")
     parser.add_argument("--grouping_column", type=str, default="A", help="The name of the grouping column.")
     parser.add_argument("--aggregation_column", type=str, default="B", help="The name of the aggregation column.")
-    parser.add_argument("--output_csv", type=str, default="results/iteration_log.csv", help="Path for the output CSV file.")
-    parser.add_argument("--output_folder", type=str, default="results", help="Folder to save the output files.")
+    parser.add_argument("--output_csv", type=str, default="results_csv(single_sum)/iteration_log.csv", help="Path for the output CSV file.")
     args = parser.parse_args()
 
     csv_file = args.csv_file
@@ -189,7 +188,6 @@ if __name__ == "__main__":
 
     grouping_column = args.grouping_column
     aggregation_column = args.aggregation_column
-    output_folder = args.output_folder
 
     result_df, output_csv = greedy_algorithm(df, agg_func="sum", output_csv=args.output_csv,
                                  grouping_column=grouping_column, aggregation_column=aggregation_column)
