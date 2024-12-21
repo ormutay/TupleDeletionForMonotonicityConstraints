@@ -26,7 +26,6 @@ def calculate_group_stats(sorted_df, agg_func, grouping_column, aggregation_colu
 # --- Group Updates ---
 def calculate_impact(grouped_df, group_index, new_group_alpha, original_Smvi):
     """Update MVI for the affected group (i) and its neighbors."""
-    # Update MVI for group i-1
     original_group_mvi = grouped_df.loc[group_index, "MVI"]
     original_prev_group_mvi = grouped_df.loc[group_index - 1, "MVI"] if group_index - 1 in grouped_df.index else 0
 
@@ -147,11 +146,7 @@ def greedy_algorithm(df, agg_func, grouping_column, aggregation_column, output_c
             break
 
         max_impact = max(impacts, key=lambda x: x[2])
-        #todo refactor max_impact_...
-        max_impact_idx = max_impact[0]
-        max_impact_value = max_impact[1]
-        max_impact_impact = max_impact[2]
-        max_impact_group = max_impact[3]
+        max_impact_idx, max_impact_value, max_impact_impact, max_impact_group = max_impact
 
         fallback_used = False
         if max_impact_impact <= 0:
@@ -167,10 +162,9 @@ def greedy_algorithm(df, agg_func, grouping_column, aggregation_column, output_c
 
         sorted_df = sorted_df.drop(index=tuples_to_remove).reset_index(drop=True)
 
-        if agg_func == sum or agg_func == pd.Series.mean: # suppose to be one tuple in this case
-            group = sorted_df.loc[max_impact_idx, grouping_column]
-            group_sums[group] -= sorted_df.loc[max_impact_idx, aggregation_column]
-            group_counts[group] -= 1
+        if agg_func == "mean" or agg_func == "avg":
+            group_sums[max_impact_group] -= sorted_df.at[max_impact_idx, aggregation_column]
+            group_counts[max_impact_group] -= 1
 
         iteration_logs.append({
             "Iteration": iteration,
