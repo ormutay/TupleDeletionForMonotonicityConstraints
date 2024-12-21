@@ -133,16 +133,17 @@ def plot_results(results, output_folder, x_axis, x_label):
     plt.savefig(os.path.join(output_folder, f"rows_removed_percentage_comparison_{x_axis}.pdf"), format='pdf')
     plt.show()
 
-    # Plot 2: Execution Time vs. x_axis
+    # Plot 2: Execution Time vs. x_axis (Logarithmic Scale)
     plt.figure(figsize=(10, 6))
     plt.plot(grouped.index, grouped["greedy_time"], marker='o', label="Greedy Algorithm")
     plt.plot(grouped.index, grouped["dp_time"], marker='o', label="DP Algorithm")
     plt.xlabel(x_label)
     plt.ylabel("Mean Execution Time (seconds)")
-    plt.title(f"Execution Time of Algorithms ({x_label})")
+    plt.yscale('log')
+    plt.title(f"Execution Time of Algorithms ({x_label}) [Log Scale]")
     plt.legend()
-    plt.grid(True)
-    plt.savefig(os.path.join(output_folder, f"execution_time_comparison_{x_axis}.pdf"), format='pdf')
+    plt.grid(True, which="both", linestyle="--", linewidth=0.5)
+    plt.savefig(os.path.join(output_folder, f"execution_time_comparison_{x_axis}(log).pdf"), format='pdf')
     plt.show()
 
     print(f"Plots saved successfully under {output_folder} folder.")
