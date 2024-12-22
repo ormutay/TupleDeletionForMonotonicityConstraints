@@ -12,7 +12,6 @@ def preprocess_sort(df, grouping_column, aggregation_column):
     return df.sort_values(by=[grouping_column, aggregation_column], ascending=[True, False]).reset_index(drop=True)
 
 # --- MVI Calculation ---
-#todo I already compute all of this in clculate_impact
 def calculate_group_stats(sorted_df, agg_func, grouping_column, aggregation_column):
     """
     Calculate Measure of Violations Index (MVI) for adjacent groups.
@@ -23,8 +22,25 @@ def calculate_group_stats(sorted_df, agg_func, grouping_column, aggregation_colu
     grouped_df["MVI"] = grouped_df["Alpha(A_i)"].diff(-1).fillna(0).clip(lower=0)
     return grouped_df
 
+# # def update_group_stats(grouped_df, max_impact_group, new_group_alpha, new_group_mvi, new_prev_group_mvi, grouping_column):
+#     """
+#     Update Alpha(A_i) and MVI fields for max_impact_group and its neighbors in grouped_df.
+#     """
+#     # Update Alpha(A_i) for max_impact_group
+#     grouped_df.loc[grouped_df[grouping_column] == max_impact_group, "Alpha(A_i)"] = new_group_alpha
+#
+#     # Update MVI for max_impact_group
+#     grouped_df.loc[grouped_df[grouping_column] == max_impact_group, "MVI"] = new_group_mvi
+#
+#     # Update MVI for max_impact_group-1 (if it exists)
+#     if max_impact_group - 1 in grouped_df[grouping_column].values:
+#         grouped_df.loc[grouped_df[grouping_column] == max_impact_group - 1, "MVI"] = new_prev_group_mvi
+#
+#     return grouped_df
+
+
 # --- Group Updates ---
-def calculate_impact(grouped_df, group_index, new_group_alpha, original_Smvi):
+def calculate_impact(grouped_df, group_index, new_group_alpha):
     """Update MVI for the affected group (i) and its neighbors."""
     original_group_mvi = grouped_df.loc[group_index, "MVI"]
     original_prev_group_mvi = grouped_df.loc[group_index - 1, "MVI"] if group_index - 1 in grouped_df.index else 0
@@ -37,18 +53,18 @@ def calculate_impact(grouped_df, group_index, new_group_alpha, original_Smvi):
     # Update MVI for group i-1
     new_prev_group_mvi = max(0, prev_group_alpha - new_group_alpha)
 
-    new_Smvi = original_Smvi + (new_group_mvi - original_group_mvi) + (new_prev_group_mvi - original_prev_group_mvi)
+    impact = (original_group_mvi - new_group_mvi) + (original_prev_group_mvi - new_prev_group_mvi)
 
-    return original_Smvi - new_Smvi
+    return impact, new_group_mvi, new_prev_group_mvi
 
 # --- Impact Calculation ---
-def calculate_tuple_impact_helper(grouped_df, group_index, row, aggregation_column, grouping_column, original_Smvi):
+def calculate_tuple_impact_helper(grouped_df, group_index, row, aggregation_column, grouping_column):
     """Helper function for the impact calculation."""
-    impact = calculate_impact(grouped_df, group_index, row['new_alpha'], original_Smvi)
-    return row.name, row[aggregation_column], impact, row[grouping_column]
+    impact, new_group_mvi, new_prev_group_mvi = calculate_impact(grouped_df, group_index, row['new_alpha'])
+    return row.name, row[aggregation_column], impact, row[grouping_column], new_group_mvi, new_prev_group_mvi, row['new_alpha']
 
 
-def calculate_tuple_removal_impact_max(sorted_df, grouped_df, group, grouping_column, aggregation_column, original_Smvi):
+def calculate_tuple_removal_impact_max(sorted_df, grouped_df, group, grouping_column, aggregation_column, group_impacts):
     """Calculate the impact of removing all max value tuples in a group."""
     #todo I can precalculate the group index so I dont have to do it each time
     group_index = grouped_df[grouped_df[grouping_column] == group].index[0]
@@ -61,23 +77,22 @@ def calculate_tuple_removal_impact_max(sorted_df, grouped_df, group, grouping_co
     #new_group_alpha = np.max(remaining_values) if remaining_values.size > 0 else 0
     remaining_group = group_tuples.drop(index=max_tuples.index)
     new_group_alpha = remaining_group[aggregation_column].max() if not remaining_group.empty else 0
-    impact = calculate_impact(grouped_df, group_index, new_group_alpha, original_Smvi)
+    impact, new_group_mvi, new_prev_group_mvi = calculate_impact(grouped_df, group_index, new_group_alpha)
 
-    return [(idx, orig_alpha, impact, group) for idx in max_tuples.index]
+    group_impacts[group] = [(idx, orig_alpha, impact, group, new_group_mvi, new_prev_group_mvi, new_group_alpha) for idx in max_tuples.index]
 
 #todo: can I not use copy here?
-def calculate_tuple_removal_impact_sum(sorted_df, grouped_df, group, grouping_column, aggregation_column, original_Smvi):
+def calculate_tuple_removal_impact_sum(sorted_df, grouped_df, group, grouping_column, aggregation_column, group_impacts):
     """Calculate the impact of removing each tuple in a group individually."""
     group_index = grouped_df[grouped_df[grouping_column] == group].index[0]
     group_tuples = sorted_df[sorted_df[grouping_column] == group].copy()
 
     orig_alpha = grouped_df.loc[group_index, "Alpha(A_i)"]
     group_tuples['new_alpha'] = orig_alpha - group_tuples[aggregation_column]
-    impacts = group_tuples.apply(lambda row: calculate_tuple_impact_helper(grouped_df, group_index, row, aggregation_column, grouping_column, original_Smvi), axis=1)
+    group_impacts[group] = group_tuples.apply(lambda row: calculate_tuple_impact_helper(grouped_df, group_index, row, aggregation_column, grouping_column), axis=1).tolist()
 
-    return impacts.tolist()
 
-def calculate_tuple_removal_impact_avg(sorted_df, grouped_df, group, grouping_column, aggregation_column, group_sums, group_counts, original_Smvi):
+def calculate_tuple_removal_impact_avg(sorted_df, grouped_df, group, grouping_column, aggregation_column, group_sums, group_counts, group_impacts):
     """Calculate the impact of removing each tuple in a group individually for AVG."""
     group_index = grouped_df[grouped_df[grouping_column] == group].index[0]
     group_tuples = sorted_df[sorted_df[grouping_column] == group].copy()
@@ -87,20 +102,7 @@ def calculate_tuple_removal_impact_avg(sorted_df, grouped_df, group, grouping_co
     else:
         group_tuples['new_alpha'] = 0
 
-    impacts = group_tuples.apply(lambda row: calculate_tuple_impact_helper(grouped_df, group_index, row, aggregation_column, grouping_column, original_Smvi), axis=1)
-
-    return impacts.tolist()
-
-def calculate_tuple_removal_impact(row, sorted_df, grouped_df, grouping_column, aggregation_column, agg_func, group_sums, group_counts, original_Smvi):
-    group = row[grouping_column]
-    if agg_func == "max":
-        return calculate_tuple_removal_impact_max(sorted_df, grouped_df, group, grouping_column, aggregation_column, original_Smvi)
-    elif agg_func == "sum":
-        return calculate_tuple_removal_impact_sum(sorted_df, grouped_df, group, grouping_column, aggregation_column, original_Smvi)
-    elif agg_func == "mean" or agg_func == "avg":
-        return calculate_tuple_removal_impact_avg(sorted_df, grouped_df, group, grouping_column, aggregation_column, group_sums, group_counts, original_Smvi)
-    else:
-        raise ValueError("Unsupported aggregation function")
+    group_impacts[group] = group_tuples.apply(lambda row: calculate_tuple_impact_helper(grouped_df, group_index, row, aggregation_column, grouping_column), axis=1).tolist()
 
 # --- Greedy Algorithm ---
 def greedy_algorithm(df, agg_func, grouping_column, aggregation_column, output_csv):
@@ -115,60 +117,90 @@ def greedy_algorithm(df, agg_func, grouping_column, aggregation_column, output_c
     start_time = time.time()
     iteration_logs = []
 
-    # Precompute initial sums and counts for each group if the aggregation function is sum or avg
+    # Precompute initial sums and counts for each group
     group_sums = None
     group_counts = None
-    if agg_func == "mean" or agg_func == "avg":
+    if agg_func in {"mean", "avg"}:
         group_sums = sorted_df.groupby(grouping_column)[aggregation_column].sum().to_dict()
         group_counts = sorted_df.groupby(grouping_column)[aggregation_column].count().to_dict()
 
-    while True:
-        grouped_df = calculate_group_stats(sorted_df, agg_func, grouping_column, aggregation_column)
-        Smvi = grouped_df["MVI"].sum()
+    # Initialize group impact tracking
+    groups = sorted_df[grouping_column].unique()
+    group_impact_calculated = {group: False for group in groups}
+    group_impacts = {group: [] for group in groups}
 
-        if Smvi == 0:
-            print("No violations remain. Algorithm completed.")
-            break
+    progress_bar = tqdm(desc="Greedy loop", unit=" iteration")
 
-        impacts = grouped_df[grouped_df["MVI"] > 0].progress_apply(calculate_tuple_removal_impact, axis=1,
-                                                                   sorted_df=sorted_df, grouped_df=grouped_df,
-                                                                   grouping_column=grouping_column, aggregation_column=aggregation_column,
-                                                                   agg_func=agg_func,
-                                                                   group_sums=group_sums, group_counts=group_counts,
-                                                                   original_Smvi=Smvi).tolist()
+    grouped_df = calculate_group_stats(sorted_df, agg_func, grouping_column, aggregation_column)
+    Smvi = grouped_df["MVI"].sum()
 
-        # Flatten the list of impacts and Validate impacts
+    while Smvi > 0:
+
+        violating_groups = grouped_df[grouped_df["MVI"] > 0][grouping_column].unique()
+
+        for group in violating_groups:
+            if not group_impact_calculated[group]:
+                if agg_func == "max":
+                    calculate_tuple_removal_impact_max(sorted_df, grouped_df, group, grouping_column,
+                                                              aggregation_column, group_impacts)
+                elif agg_func == "sum":
+                    calculate_tuple_removal_impact_sum(sorted_df, grouped_df, group, grouping_column,
+                                                              aggregation_column, group_impacts)
+                elif agg_func in {"mean", "avg"}:
+                    calculate_tuple_removal_impact_avg(sorted_df, grouped_df, group, grouping_column,
+                                                              aggregation_column, group_sums, group_counts,
+                                                              group_impacts)
+                else:
+                    raise ValueError("Unsupported aggregation function")
+                group_impact_calculated[group] = True
+
+        impacts = [impact
+                   for group in violating_groups
+                   for impact in group_impacts[group]
+                   ]
+
+        # Flatten and validate impacts
         impacts = [item for sublist in impacts for item in (sublist if isinstance(sublist, list) else [sublist])]
-        impacts = [impact for impact in impacts if isinstance(impact, (list, tuple)) and len(impact) >= 4]
+        impacts = [impact for impact in impacts if isinstance(impact, (list, tuple)) and len(impact) >= 7]
 
         if not impacts:
             print("No valid impacts found. Stopping.")
             break
 
+        # Find the maximum impact
         max_impact = max(impacts, key=lambda x: x[2])
-        max_impact_idx, max_impact_value, max_impact_impact, max_impact_group = max_impact
+        max_impact_idx, max_impact_value, max_impact_impact, max_impact_group, new_group_mvi, new_prev_group_mvi, new_group_alpha = max_impact
 
         fallback_used = False
         if max_impact_impact <= 0:
-            print("No positive impacts found. Using fallback strategy.")
             fallback_used = True
 
-        if agg_func == max:
-            tuples_to_remove = [idx for idx, max_value, impact, group in impacts if max_value == max_impact_value and group == max_impact_group]
+        if agg_func == "max":
+            tuples_to_remove = [idx for idx, max_value, _, group, _, _, _ in impacts if max_value == max_impact_value and group == max_impact_group]
             num_tuples_to_remove = len(tuples_to_remove)
         else:
             tuples_to_remove = max_impact_idx
             num_tuples_to_remove = 1
 
+        # todo: do this in the end, keep track of the tuples to remove so I can remove them in the end and still calculate the impact correctly
+        #todo do i need to do = here?
         sorted_df = sorted_df.drop(index=tuples_to_remove).reset_index(drop=True)
 
-        if agg_func == "mean" or agg_func == "avg":
-            group_sums[max_impact_group] -= sorted_df.at[max_impact_idx, aggregation_column]
+        group_impact_calculated[max_impact_group] = False
+        if max_impact_group - 1 in groups:
+            group_impact_calculated[max_impact_group - 1] = False
+        if max_impact_group + 1 in groups:
+            group_impact_calculated[max_impact_group + 1] = False
+
+        if agg_func in {"mean", "avg"}:
+            group_sums[max_impact_group] -= max_impact_value
             group_counts[max_impact_group] -= 1
+
+        Smvi -= max_impact_impact
 
         iteration_logs.append({
             "Iteration": iteration,
-            "Current Smvi": Smvi,
+            "Updated Smvi": Smvi,
             "Tuple Removed Group Value": max_impact_group,
             "Tuple Removed Aggregation Value": max_impact_value,
             "Number of Tuples Removed": num_tuples_to_remove,
@@ -179,6 +211,15 @@ def greedy_algorithm(df, agg_func, grouping_column, aggregation_column, output_c
         tuple_removals += num_tuples_to_remove
         iteration += 1
 
+        #todo switch back after bug is fixed
+        #grouped_df = update_group_stats(grouped_df, max_impact_group, new_group_mvi, new_prev_group_mvi, new_group_alpha, grouping_column)
+        grouped_df = calculate_group_stats(sorted_df, agg_func, grouping_column, aggregation_column)
+
+        progress_bar.set_postfix({"Current Smvi": Smvi, "Fallback Used": fallback_used})
+        progress_bar.update(1)
+
+    print("No violations remain. Algorithm completed.")
+    progress_bar.close()
     end_time = time.time()
     print(f"Total tuple removals: {tuple_removals}")
     print(f"Total execution time: {end_time - start_time:.4f} seconds")
