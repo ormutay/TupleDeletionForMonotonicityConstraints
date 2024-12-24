@@ -15,16 +15,6 @@ def preprocess_sort(df, grouping_column, aggregation_column):
 # --- MVI Calculation ---
 def calculate_group_stats(sorted_df, agg_func, grouping_column, aggregation_column):
     """
-    Calculate Measure of Violations Index (MVI) for adjacent groups.
-    Aggregates group values using the provided function (agg_func).
-    """
-    grouped_df = sorted_df.groupby(grouping_column)[aggregation_column].apply(agg_func).reset_index()
-    grouped_df.rename(columns={aggregation_column: "Alpha(A_i)"}, inplace=True)
-    grouped_df["MVI"] = grouped_df["Alpha(A_i)"].diff(-1).fillna(0).clip(lower=0)
-    return grouped_df
-
-def calculate_group_stats(sorted_df, agg_func, grouping_column, aggregation_column):
-    """
     Calculate Alpha(A_i) and MVI ( Measure of Violations Index) for adjacent groups.
     """
     group_agg = sorted_df.groupby(grouping_column)[aggregation_column].apply(agg_func).reset_index()
@@ -39,23 +29,21 @@ def calculate_group_stats(sorted_df, agg_func, grouping_column, aggregation_colu
 
     return group_stats
 
+def update_group_stats(group_stats, max_impact_group, new_group_alpha, new_group_mvi, new_prev_group_mvi):
+    """
+    Update Alpha(A_i) and MVI fields for max_impact_group and its neighbors in group_stats.
+    """
+    # Update Alpha(A_i) and MVI for max_impact_group
+    group_stats[max_impact_group]["Alpha(A_i)"] = new_group_alpha
+    group_stats[max_impact_group]["MVI"] = new_group_mvi
 
-# # def update_group_stats(grouped_df, max_impact_group, new_group_alpha, new_group_mvi, new_prev_group_mvi, grouping_column):
-#     """
-#     Update Alpha(A_i) and MVI fields for max_impact_group and its neighbors in grouped_df.
-#     """
-#     # Update Alpha(A_i) for max_impact_group
-#     grouped_df.loc[grouped_df[grouping_column] == max_impact_group, "Alpha(A_i)"] = new_group_alpha
-#
-#     # Update MVI for max_impact_group
-#     grouped_df.loc[grouped_df[grouping_column] == max_impact_group, "MVI"] = new_group_mvi
-#
-#     # Update MVI for max_impact_group-1 (if it exists)
-#     if max_impact_group - 1 in grouped_df[grouping_column].values:
-#         grouped_df.loc[grouped_df[grouping_column] == max_impact_group - 1, "MVI"] = new_prev_group_mvi
-#
-#     return grouped_df
+    # Update MVI for the previous group (if it exists)
+    prev_group = group_stats[max_impact_group]["prev"]
+    if prev_group in group_stats:
+        group_stats[prev_group]["MVI"] = new_prev_group_mvi
 
+    #todo I dont think I need to return group_stats
+    return group_stats
 
 # --- Group Updates ---
 def calculate_impact(group_stats, group_id, new_alpha):
@@ -268,9 +256,7 @@ def greedy_algorithm(df, agg_func, grouping_column, aggregation_column, output_c
         tuple_removals += num_tuples_to_remove
         iteration += 1
 
-        #todo switch back after bug is fixed
-        #group_stats = update_group_stats(grouped_df, max_impact_group, new_group_mvi, new_prev_group_mvi, new_group_alpha, grouping_column)
-        group_stats = calculate_group_stats(sorted_df, agg_func, grouping_column, aggregation_column)
+        update_group_stats(group_stats, max_impact_group, new_group_alpha, new_group_mvi, new_prev_group_mvi)
 
         progress_bar.set_postfix({"Current Smvi": Smvi, "Fallback Used": fallback_used})
         progress_bar.update(1)
@@ -303,10 +289,11 @@ if __name__ == "__main__":
 
     print(f"Processing file: {csv_name} with aggregation function: {agg_func_name}")
 
-    df = pd.read_csv(args.csv_file)
-    df = df[[args.grouping_column, args.aggregation_column]]
-    # todo: terrible hack:
-    df['price'] = df['price']*1000
+    df = pd.read_csv(args.csv_file)[[args.grouping_column, args.aggregation_column]].copy()
+
+    # todo: hack because price is << 1:
+    if(args.csv_file == "may_transactions.csv"):
+        df['price'] = df['price']*1000
 
     output_csv = os.path.join(args.output_folder, f"logs-{csv_name}-{agg_func_name}.csv")
     result_df = greedy_algorithm(df, pandas_agg_func, grouping_column=args.grouping_column, aggregation_column=args.aggregation_column, output_csv=output_csv)
