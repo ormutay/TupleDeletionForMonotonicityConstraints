@@ -137,23 +137,22 @@ def calculate_tuple_removal_impact_avg(group_data, group_stats, group_id, group_
 
     group_impacts[group_id] = impacts
 
+def calculate_group_impacts(group, group_data, group_stats, agg_func, group_impacts, group_impact_calculated, group_sums=None, group_counts=None):
+    if not group_impact_calculated[group]:
+        if agg_func == "max":
+            calculate_tuple_removal_impact_max(group_data, group_stats, group, group_impacts)
+        elif agg_func == "sum":
+            calculate_tuple_removal_impact_sum(group_data, group_stats, group, group_impacts)
+        elif agg_func in {"mean", "avg"}:
+            calculate_tuple_removal_impact_avg(group_data, group_stats, group, group_impacts,
+                                               group_sums, group_counts)
+        group_impact_calculated[group] = True
 
 # --- Greedy Algorithm ---
-def greedy_algorithm(df, agg_func, grouping_column, aggregation_column, output_csv):
-    """Greedy algorithm to minimize Smvi by removing tuples."""
-    output_dir = os.path.dirname(output_csv)
-    if output_dir and not os.path.exists(output_dir):
-        os.makedirs(output_dir)
-
-    iteration = 0
-    tuple_removals = 0
-    start_time = time.time()
-    iteration_logs = []
-
+def initialize_group_data_and_stats(df, grouping_column, aggregation_column, agg_func):
     group_data = preprocess_group_values_with_indices(df, grouping_column, aggregation_column)
     group_stats = calculate_group_stats(df, agg_func, grouping_column, aggregation_column)
     Smvi = sum(stats["MVI"] for stats in group_stats.values())
-    removed_indices = []
 
     # Precompute initial sums and counts for each group (for avg aggregation)
     group_sums, group_counts = None, None
@@ -165,21 +164,70 @@ def greedy_algorithm(df, agg_func, grouping_column, aggregation_column, output_c
     group_impact_calculated = {group_id: False for group_id in group_stats}
     group_impacts = {group_id: [] for group_id in group_stats}
 
-    progress_bar = tqdm(desc="Greedy loop", unit=" iteration")
+    return group_data, group_stats, Smvi, group_sums, group_counts, group_impact_calculated, group_impacts
 
+def handle_removal_and_update(group_data, group_stats, max_impact_data, agg_func, group_sums, group_counts,
+                              removed_indices, group_impact_calculated):
+    max_impact_idx = max_impact_data["tuple_index"]
+    max_impact_value = max_impact_data["value"]
+    max_impact_group = max_impact_data["group_id"]
+
+    if agg_func == "max":
+        tuples_to_remove = group_data[max_impact_group][max_impact_value]
+        removed_indices.extend(tuples_to_remove)
+        del group_data[max_impact_group][max_impact_value]
+        num_tuples_to_remove = len(tuples_to_remove)
+    else:
+        group_data[max_impact_group][max_impact_value].remove(max_impact_idx)
+        if not group_data[max_impact_group][max_impact_value]:
+            del group_data[max_impact_group][max_impact_value]
+        removed_indices.append(max_impact_idx)
+        num_tuples_to_remove = 1
+
+    if agg_func in {"mean", "avg"}:
+        group_sums[max_impact_group] -= max_impact_value
+        group_counts[max_impact_group] -= 1
+
+    group_impact_calculated[max_impact_group] = False
+    if max_impact_group - 1 in group_stats:
+        group_impact_calculated[max_impact_group - 1] = False
+    if max_impact_group + 1 in group_stats:
+        group_impact_calculated[max_impact_group + 1] = False
+
+    return num_tuples_to_remove, max_impact_group, max_impact_value
+
+def log_iteration(iteration_logs, iteration, Smvi, max_impact_group, max_impact_value, num_tuples_to_remove, max_impact_impact, fallback_used):
+    iteration_logs.append({
+        "Iteration": iteration,
+        "Original Smvi": Smvi,
+        "Tuple Removed Group Value": max_impact_group,
+        "Tuple Removed Aggregation Value": max_impact_value,
+        "Number of Tuples Removed": num_tuples_to_remove,
+        "Impact": max_impact_impact,
+        "Fallback Used": fallback_used
+    })
+
+def greedy_algorithm(df, agg_func, grouping_column, aggregation_column, output_csv):
+    """Greedy algorithm to minimize Smvi by removing tuples."""
+    output_dir = os.path.dirname(output_csv)
+    if output_dir and not os.path.exists(output_dir):
+        os.makedirs(output_dir)
+
+    iteration = 0
+    tuple_removals = 0
+    start_time = time.time()
+    iteration_logs = []
+    removed_indices = []
+
+    group_data, group_stats, Smvi, group_sums, group_counts, group_impact_calculated, group_impacts = initialize_group_data_and_stats(df, grouping_column, aggregation_column, agg_func)
+
+    progress_bar = tqdm(desc="Greedy loop", unit=" iteration")
     while Smvi > 0:
         violating_groups = [group_id for group_id, stats in group_stats.items() if stats["MVI"] > 0]
 
         for group in violating_groups:
-            if not group_impact_calculated[group]:
-                if agg_func == "max":
-                    calculate_tuple_removal_impact_max(group_data, group_stats, group, group_impacts)
-                elif agg_func == "sum":
-                    calculate_tuple_removal_impact_sum(group_data, group_stats, group, group_impacts)
-                elif agg_func in {"mean", "avg"}:
-                    calculate_tuple_removal_impact_avg(group_data, group_stats, group, group_impacts,
-                                                        group_sums, group_counts)
-                group_impact_calculated[group] = True
+            calculate_group_impacts(group, group_data, group_stats, agg_func, group_impacts,
+                                    group_impact_calculated, group_sums, group_counts)
 
         # Find the maximum impact
         max_impact_data = max((impact_data
@@ -192,59 +240,24 @@ def greedy_algorithm(df, agg_func, grouping_column, aggregation_column, output_c
             print("No valid impacts found. Stopping.")
             break
 
-        max_impact_idx, max_impact_value, max_impact_impact, max_impact_group, new_group_mvi, new_prev_group_mvi, new_group_alpha = (
-            max_impact_data["tuple_index"],
-            max_impact_data["value"],
-            max_impact_data["impact"],
-            max_impact_data["group_id"],
-            max_impact_data["new_mvi"],
-            max_impact_data["new_prev_mvi"],
-            max_impact_data["new_alpha"]
-        )
+        max_impact_impact = max_impact_data["impact"]
+        fallback_used = max_impact_impact <= 0
 
-        fallback_used = False
-        if max_impact_impact <= 0:
-            fallback_used = True
-
-        if agg_func == "max":
-            tuples_to_remove = group_data[max_impact_group][max_impact_value]
-            removed_indices.extend(tuples_to_remove)
-            del group_data[max_impact_group][max_impact_value]
-            num_tuples_to_remove = len(tuples_to_remove)
-        else:
-            group_data[max_impact_group][max_impact_value].remove(max_impact_idx)
-            if not group_data[max_impact_group][max_impact_value]:
-                del group_data[max_impact_group][max_impact_value]
-            removed_indices.append(max_impact_idx)
-            num_tuples_to_remove = 1
-
-        if agg_func in {"mean", "avg"}:
-            group_sums[max_impact_group] -= max_impact_value
-            group_counts[max_impact_group] -= 1
-
-        group_impact_calculated[max_impact_group] = False
-        if max_impact_group - 1 in group_stats:
-            group_impact_calculated[max_impact_group - 1] = False
-        if max_impact_group + 1 in group_stats:
-            group_impact_calculated[max_impact_group + 1] = False
+        num_tuples_to_remove, max_impact_group, max_impact_value = handle_removal_and_update(group_data, group_stats,
+                                                                                             max_impact_data, agg_func,
+                                                                                             group_sums, group_counts,
+                                                                                             removed_indices, group_impact_calculated)
 
 
-        iteration_logs.append({
-            "Iteration": iteration,
-            "Original Smvi": Smvi,
-            "Tuple Removed Group Value": max_impact_group,
-            "Tuple Removed Aggregation Value": max_impact_value,
-            "Number of Tuples Removed": num_tuples_to_remove,
-            "Impact": max_impact_impact,
-            "Fallback Used": fallback_used
-        })
+        log_iteration(iteration_logs, iteration, Smvi, max_impact_group, max_impact_value,
+                      num_tuples_to_remove, max_impact_impact, fallback_used)
 
         Smvi -= max_impact_impact
+        update_group_stats(group_stats, max_impact_group,
+                           max_impact_data["new_alpha"], max_impact_data["new_mvi"], max_impact_data["new_prev_mvi"])
+
         tuple_removals += num_tuples_to_remove
         iteration += 1
-
-        update_group_stats(group_stats, max_impact_group, new_group_alpha, new_group_mvi, new_prev_group_mvi)
-
         progress_bar.set_postfix({"Current Smvi": Smvi, "Fallback Used": fallback_used})
         progress_bar.update(1)
 
@@ -281,7 +294,7 @@ if __name__ == "__main__":
     df = pd.read_csv(args.csv_file)[[args.grouping_column, args.aggregation_column]].copy()
 
     # todo: hack because price is << 1:
-    if(args.csv_file == "may_transactions.csv"):
+    if args.csv_file == "may_transactions.csv":
         df['price'] = df['price']*1000
 
     output_csv = os.path.join(args.output_folder, f"logs-{csv_name}-{agg_func_name}.csv")
