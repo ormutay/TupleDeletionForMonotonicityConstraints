@@ -114,7 +114,6 @@ def calculate_tuple_removal_impact_sum(group_data, group_stats, group_id, group_
 
 def calculate_tuple_removal_impact_avg(group_data, group_stats, group_id, group_impacts, group_sums, group_counts):
     """Calculate impact of removing each tuple in a group for avg aggregation."""
-    current_alpha = group_stats[group_id]["Alpha(A_i)"]
     impacts = []
 
     for value, indices in group_data[group_id].items():
@@ -137,6 +136,27 @@ def calculate_tuple_removal_impact_avg(group_data, group_stats, group_id, group_
 
     group_impacts[group_id] = impacts
 
+def calculate_tuple_removal_impact_median(group_data, group_stats, group_id, group_impacts):
+    impacts = []
+
+    for value, indices in group_data[group_id].items():
+        remaining_values = [v for v in group_data[group_id] if v != value]
+        new_alpha = np.median(remaining_values) if remaining_values else 0
+        impact, new_mvi, new_prev_mvi = calculate_impact(group_stats, group_id, new_alpha)
+        for index in indices:
+            impacts.append({
+                "tuple_index": index,
+                "value": value,
+                "impact": impact,
+                "group_id": group_id,
+                "new_mvi": new_mvi,
+                "new_prev_mvi": new_prev_mvi,
+                "new_alpha": new_alpha
+            })
+
+    group_impacts[group_id] = impacts
+
+
 def calculate_group_impacts(group, group_data, group_stats, agg_func, group_impacts, group_impact_calculated, group_sums=None, group_counts=None):
     if not group_impact_calculated[group]:
         if agg_func == "max":
@@ -146,6 +166,9 @@ def calculate_group_impacts(group, group_data, group_stats, agg_func, group_impa
         elif agg_func in {"mean", "avg"}:
             calculate_tuple_removal_impact_avg(group_data, group_stats, group, group_impacts,
                                                group_sums, group_counts)
+        elif agg_func == "median":
+            calculate_tuple_removal_impact_median(group_data, group_stats, group, group_impacts)
+
         group_impact_calculated[group] = True
 
 # --- Greedy Algorithm ---
@@ -278,14 +301,14 @@ def greedy_algorithm(df, agg_func, grouping_column, aggregation_column, output_c
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run the greedy algorithm with a specified aggregation function.")
     parser.add_argument("csv_file", type=str, help="The path to the input CSV file.")
-    parser.add_argument("agg_func", type=str, choices=["sum", "max", "avg"], help="The aggregation function to use.")
+    parser.add_argument("agg_func", type=str, choices=["sum", "max", "avg", "median"], help="The aggregation function to use.")
     parser.add_argument("--grouping_column", type=str, default="A", help="The column to group by.")
     parser.add_argument("--aggregation_column", type=str, default="B", help="The column to aggregate.")
     parser.add_argument("--output_folder", type=str, default="results", help="The folder to save the output CSV files.")
     args = parser.parse_args()
 
     csv_name = os.path.basename(args.csv_file)  # Extract the file name without the path
-    function_map = {"sum": "sum", "max": "max", "avg": "mean"}
+    function_map = {"sum": "sum", "max": "max", "avg": "mean", "median": "median"}
     agg_func_name = args.agg_func.upper()
     pandas_agg_func = function_map[args.agg_func]
 

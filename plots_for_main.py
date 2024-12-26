@@ -24,7 +24,11 @@ def plot_aggregation(df, grouping_column, aggregation_column, title, output_file
 
 def plot_impact_per_iteration(log_file, output_file):
     """Plot the impact per iteration based on the iteration log."""
-    log_data = pd.read_csv(log_file)
+    try:
+        log_data = pd.read_csv(log_file)
+    except pd.errors.EmptyDataError:
+        print(f"Log file {log_file} is empty or could not be parsed. Skipping impact plot generation.")
+        return
 
     if "Impact" not in log_data.columns or "Iteration" not in log_data.columns:
         print("Error: Missing required columns in the log file.")

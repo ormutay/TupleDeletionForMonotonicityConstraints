@@ -12,9 +12,9 @@ def create_dataset(
     Create a dataset with columns A and B that is almost monotonic with respect to the aggregation function.
     """
     # Map aggregation function name to the actual function
-    function_map = {"sum": "sum", "max": "max", "avg": "mean"}
+    function_map = {"sum": "sum", "max": "max", "avg": "mean", "median": "median"}
     if agg_func_name not in function_map:
-        raise ValueError("Aggregation function must be 'sum', 'max', or 'avg'.")
+        raise ValueError("Aggregation function must be 'sum', 'max', 'median' or 'avg'.")
 
     agg_func = function_map[agg_func_name]
 
@@ -60,6 +60,15 @@ def create_dataset(
                             (group_agg.loc[group_idx + 2, "B"] * next_group_count + avg_adjustment)
                             / next_group_count
                     )
+        elif agg_func_name == "median":
+            for _ in range(num_violations):
+                group_idx = random.randint(0, num_groups - 2)  # Pick a random group (except the last one)
+                current_group_values = df[df["A"] == group_idx + 1]["B"].tolist()
+                next_group_values = df[df["A"] == group_idx + 2]["B"].tolist()
+
+                if next_group_values:
+                    violation_value = random.randint(min(next_group_values), max(next_group_values))
+                    df.loc[df["A"] == group_idx + 2, "B"] = violation_value
 
     # Reassign B values to the original DataFrame
     monotonic_B = group_agg.set_index("A")["B"].to_dict()
@@ -84,7 +93,7 @@ def plot_dataset(df, group_agg, agg_func_name, output_folder, index, name_suffix
     Args:
         df (pd.DataFrame): The dataset to visualize.
         group_agg (pd.DataFrame): Aggregated group data.
-        agg_func_name (str): Aggregation function name ('sum' or 'max').
+        agg_func_name (str): Aggregation function name
         output_folder (str): Name of the output folder for saving plots.
         index (int): Index of the dataset (for unique naming).
         name_suffix (str): Custom suffix for naming output files.
@@ -129,7 +138,7 @@ def run_dataset_generation(configurations, num_datasets_per_setting):
                         num_groups=config.get('num_groups', param_value),
                         num_rows=config.get('num_rows', param_value),
                         agg_func_name=agg_func,
-                        output_folder=f"dataset-{agg_func}-w7/{config['folder']}",
+                        output_folder=f"w8/dataset-{agg_func}-w8/{config['folder']}",
                         index=i,
                         violations_percentage=config.get('violations_percentage', param_value),
                         name_suffix=f"{agg_func}_g{config.get('num_groups', param_value)}_r{config.get('num_rows', param_value)}_v{config.get('violations_percentage', param_value)}"
@@ -137,25 +146,26 @@ def run_dataset_generation(configurations, num_datasets_per_setting):
 
 if __name__ == "__main__":
     num_datasets_per_setting = 3  # Number of datasets per setting
+    agg_funcs = ["sum", "max", "avg", "median"]
     configurations = [
         {
             'range': range(100, 300, 100),
             'folder': 'rows',
-            'agg_funcs': ['sum', 'max', 'avg'],
+            'agg_funcs': agg_funcs,
             'num_groups': 10,
             'violations_percentage': 10,
         },
         {
             'range': range(5, 15, 5),
             'folder': 'groups',
-            'agg_funcs': ['sum', 'max', 'avg'],
+            'agg_funcs': agg_funcs,
             'num_rows': 500,
             'violations_percentage': 10,
         },
         {
             'range': range(5, 15, 5),
             'folder': 'violations',
-            'agg_funcs': ['sum', 'max', 'avg'],
+            'agg_funcs': agg_funcs,
             'num_groups': 10,
             'num_rows': 500,
         }
