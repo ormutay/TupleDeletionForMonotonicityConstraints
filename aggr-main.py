@@ -248,6 +248,9 @@ def greedy_algorithm(df, agg_func, grouping_column, aggregation_column, output_c
     while Smvi > 0:
         violating_groups = [group_id for group_id, stats in group_stats.items() if stats["MVI"] > 0]
 
+        if agg_func in {"avg", "mean", "median"}: # In the case of these aggregation functions, we can also try to inc the alpha val of group+1
+            violating_groups += [group_id + 1 for group_id in violating_groups if (group_id + 1) in group_stats]
+
         for group in violating_groups:
             calculate_group_impacts(group, group_data, group_stats, agg_func, group_impacts,
                                     group_impact_calculated, group_sums, group_counts)
