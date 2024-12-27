@@ -296,7 +296,7 @@ def greedy_algorithm(df, agg_func, grouping_column, aggregation_column, output_c
     pd.DataFrame(iteration_logs).to_csv(output_csv, index=False)
     print(f"Iteration logs saved to {output_csv}")
 
-    result_df = df.drop(index=removed_indices).reset_index(drop=True)
+    result_df = df.drop(index=removed_indices)
     return result_df
 
 
@@ -320,7 +320,7 @@ if __name__ == "__main__":
     df = pd.read_csv(args.csv_file)[[args.grouping_column, args.aggregation_column]].copy()
 
     # todo: hack because price is << 1:
-    if args.csv_file == "may_transactions.csv":
+    if args.csv_file == "may_transactions.csv" or args.csv_file == "may_transactions-reduced.csv":
         df['price'] = df['price']*1000
 
     output_csv = os.path.join(args.output_folder, f"logs-{csv_name}-{agg_func_name}.csv")

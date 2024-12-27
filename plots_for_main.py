@@ -7,12 +7,26 @@ import os
 def plot_aggregation(df, grouping_column, aggregation_column, title, output_file, agg_func, agg_func_name):
     """Plot the aggregated values of the DataFrame."""
     aggregated_df = df.groupby(grouping_column)[aggregation_column].apply(agg_func).reset_index()
+    aggregated_df = aggregated_df.rename(columns={aggregation_column: "Aggregated_Value"})
 
     # Ensure the directory exists
     os.makedirs(os.path.dirname(output_file), exist_ok=True)
 
-    plt.figure(figsize=(10, 6))
-    plt.bar(aggregated_df[grouping_column], aggregated_df[aggregation_column], color='skyblue')
+    plt.figure(figsize=(14, 10))
+    bar_width = 0.9
+    bars = plt.bar(aggregated_df[grouping_column], aggregated_df["Aggregated_Value"], color='skyblue', width=bar_width)
+
+    # Add text annotations on top of bars
+    for bar, value in zip(bars, aggregated_df["Aggregated_Value"]):
+        plt.text(
+            bar.get_x() + bar.get_width() / 2,
+            bar.get_height() + 0.02 * max(aggregated_df["Aggregated_Value"]),
+            f"{value:.2f}",
+            ha='center',
+            va='bottom',
+            fontsize=6
+        )
+
     plt.xlabel(grouping_column)
     plt.ylabel(f"{agg_func_name}({aggregation_column})")
     plt.title(title)
