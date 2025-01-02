@@ -189,6 +189,44 @@ def initialize_group_data_and_stats(df, grouping_column, aggregation_column, agg
 
     return group_data, group_stats, Smvi, group_sums, group_counts, group_impact_calculated, group_impacts
 
+def find_max_impact_data(group_impacts, violating_groups, additional_groups, agg_func):
+    max_impact_data = None
+
+    if agg_func in {"avg", "mean", "median"}:
+        # min value logic
+        max_impact_data_additional = max((impact_data
+                                          for group_id in additional_groups
+                                          for impact_data in group_impacts[group_id]),
+                                         key=lambda x: (x["impact"], -x["value"]),
+                                         default=None)
+        # max value logic
+        max_impact_data_regular = max((impact_data
+                                       for group_id in violating_groups if group_id not in additional_groups
+                                       for impact_data in group_impacts[group_id]),
+                                      key=lambda x: (x["impact"], x["value"]),
+                                      default=None)
+
+        # overall max impact data (prioritizing "regular" groups)
+        if max_impact_data_regular is None and max_impact_data_additional is None:
+            return None
+        if max_impact_data_additional is None and max_impact_data_regular is not None:
+            max_impact_data = max_impact_data_regular
+        elif max_impact_data_additional is not None and max_impact_data_regular is None:
+            max_impact_data = max_impact_data_additional
+        else:
+            max_impact_data = max_impact_data_additional \
+                              if max_impact_data_additional["impact"] > max_impact_data_regular["impact"] \
+                              else max_impact_data_regular
+    else:
+        max_impact_data = max((impact_data
+                               for group_id in violating_groups
+                               for impact_data in group_impacts[group_id]),
+                              key=lambda x: (x["impact"], x["value"]),
+                              default=None)
+
+    return max_impact_data
+
+
 def handle_removal_and_update(group_data, group_stats, max_impact_data, agg_func, group_sums, group_counts,
                               removed_indices, group_impact_calculated):
     max_impact_idx = max_impact_data["tuple_index"]
@@ -241,29 +279,32 @@ def greedy_algorithm(df, agg_func, grouping_column, aggregation_column, output_c
     start_time = time.time()
     iteration_logs = []
     removed_indices = []
+    debug_data = []
 
     group_data, group_stats, Smvi, group_sums, group_counts, group_impact_calculated, group_impacts = initialize_group_data_and_stats(df, grouping_column, aggregation_column, agg_func)
 
     progress_bar = tqdm(desc="Greedy loop", unit=" iteration")
     while Smvi > 0:
+        violating_groups = None
+        additional_groups = None
+
+
         violating_groups = [group_id for group_id, stats in group_stats.items() if stats["MVI"] > 0]
 
         if agg_func in {"avg", "mean", "median"}: # In the case of these aggregation functions, we can also try to inc the alpha val of group+1
-            violating_groups += [group_id + 1 for group_id in violating_groups if (group_id + 1) in group_stats]
+            additional_groups = [group_id + 1 for group_id in violating_groups if (group_id + 1) in group_stats]
+            violating_groups.extend(additional_groups)
+
 
         for group in violating_groups:
             calculate_group_impacts(group, group_data, group_stats, agg_func, group_impacts,
                                     group_impact_calculated, group_sums, group_counts)
 
         # Find the maximum impact
-        max_impact_data = max((impact_data
-                               for group_id in violating_groups
-                               for impact_data in group_impacts[group_id]),
-                              key=lambda x: x["impact"],
-                              default=None)
+        max_impact_data = find_max_impact_data(group_impacts, violating_groups, additional_groups, agg_func)
 
         if max_impact_data is None:
-            print("No valid impacts found. Stopping.")
+            print("\033[91mNo valid impacts found. Stopping.\033[0m")
             break
 
         max_impact_impact = max_impact_data["impact"]
@@ -287,9 +328,9 @@ def greedy_algorithm(df, agg_func, grouping_column, aggregation_column, output_c
         progress_bar.set_postfix({"Current Smvi": Smvi, "Fallback Used": fallback_used})
         progress_bar.update(1)
 
-    print("No violations remain. Algorithm completed.")
     progress_bar.close()
     end_time = time.time()
+    print("\033[92mNo violations remain. Algorithm completed.\033[0m")
     print(f"Total tuple removals: {tuple_removals}")
     print(f"Total execution time: {end_time - start_time:.4f} seconds")
 
@@ -315,17 +356,17 @@ if __name__ == "__main__":
     agg_func_name = args.agg_func.upper()
     pandas_agg_func = function_map[args.agg_func]
 
-    print(f"Processing file: {csv_name} with aggregation function: {agg_func_name}")
+    print(f"\033[1mProcessing file: {csv_name} with aggregation function: {agg_func_name}\033[0m")
 
     df = pd.read_csv(args.csv_file)[[args.grouping_column, args.aggregation_column]].copy()
 
     # todo: hack because price is << 1:
     if args.csv_file == "may_transactions.csv" or args.csv_file == "may_transactions-reduced.csv":
-        df['price'] = df['price']*1000
+        df['price'] = df['price']*1000000
 
     output_csv = os.path.join(args.output_folder, f"logs-{csv_name}-{agg_func_name}.csv")
     result_df = greedy_algorithm(df, pandas_agg_func, grouping_column=args.grouping_column, aggregation_column=args.aggregation_column, output_csv=output_csv)
-    print("Finished running the greedy algorithm.")
+    print("\033[1mFinished running the greedy algorithm.\033[0m")
 
     print("Plotting results...")
     # Plot aggregated values before and after the algorithm
