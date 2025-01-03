@@ -56,16 +56,16 @@ def process_single_dataset(dataset_path, greedy_algo_path, dp_algo_path, agg_fun
     # Run greedy algorithm
     greedy_command = [
         "python", greedy_algo_path, dataset_path,
+        agg_function.lower(),
         "--grouping_column", group_column,
         "--aggregation_column", agg_column,
-        "--output_csv", output_csv,
         "--output_folder", output_folder,
     ]
     greedy_results = run_algorithm(greedy_command, is_dp=False, timeout=timeout)
 
     # Run DP algorithm
     dp_command = [
-        "python", dp_algo_path, agg_function, dataset_path, agg_column, group_column
+        "python", dp_algo_path, agg_function.upper(), dataset_path, agg_column, group_column
     ]
     dp_results = run_algorithm(dp_command, is_dp=True, timeout=timeout)
 
@@ -152,7 +152,7 @@ def plot_results(results, output_folder, x_axis, x_label):
 #python/py -3.13 compare_algorithms.py --agg_function <agg_function> --dataset_folder <dataset_folder> --results_folder <results_folder> --timeout_min <timeout_min> --grouping_column <grouping_column> --aggregation_column <aggregation_column>
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Compare Greedy and DP Algorithms")
-    parser.add_argument("--agg_function", type=str, choices=["SUM", "MAX"], required=True, help="The aggregation function to use")
+    parser.add_argument("--agg_function", type=str, choices=["max", "sum", "avg", "median"], required=True, help="The aggregation function to use")
     parser.add_argument("--dataset_folder", type=str, default="datasets", help="The folder containing the datasets")
     parser.add_argument("--results_folder", type=str, default="results", help="The folder to store results")
     parser.add_argument("--timeout_min", type=int, default=600, help="The timeout for each algorithm run in minutes")
@@ -174,7 +174,7 @@ if __name__ == "__main__":
         output_folder = os.path.join(result_folder, folder)
         os.makedirs(output_folder, exist_ok=True)
 
-        results = process_datasets_parallel(dataset_folder, f"{agg_function.lower()}-main.py", "Trendline-Outlier-Detection/main.py",
+        results = process_datasets_parallel(dataset_folder, f"aggr-main.py", "Trendline-Outlier-Detection/main.py",
                                             agg_function, timeout=timeout, results_folder=result_folder,
                                             grouping_column=grouping_column, aggregation_column=aggregation_column,
                                             output_folder=output_folder)
