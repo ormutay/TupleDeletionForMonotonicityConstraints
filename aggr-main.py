@@ -337,8 +337,10 @@ def greedy_algorithm(df, agg_func, grouping_column, aggregation_column, output_c
     pd.DataFrame(iteration_logs).to_csv(output_csv, index=False)
     print(f"Iteration logs saved to {output_csv}")
 
+    removed_df = df.loc[removed_indices]
+
     result_df = df.drop(index=removed_indices)
-    return result_df
+    return result_df, removed_df
 
 
 # --- Main ---
@@ -365,7 +367,7 @@ if __name__ == "__main__":
         df['price'] = df['price']*1000000
 
     output_csv = os.path.join(args.output_folder, f"logs-{csv_name}-{agg_func_name}.csv")
-    result_df = greedy_algorithm(df, pandas_agg_func, grouping_column=args.grouping_column, aggregation_column=args.aggregation_column, output_csv=output_csv)
+    result_df, removed_df = greedy_algorithm(df, pandas_agg_func, grouping_column=args.grouping_column, aggregation_column=args.aggregation_column, output_csv=output_csv)
     print("\033[1mFinished running the greedy algorithm.\033[0m")
 
     print("Plotting results...")
@@ -381,3 +383,9 @@ if __name__ == "__main__":
 
     # Plot impact per iteration
     plot_impact_per_iteration(output_csv, f"{args.output_folder}/plots/impact_per_iteration-{agg_func_name}-{csv_name}.pdf")
+
+    print("Saving results to csv...")
+    result_df.to_csv(os.path.join(args.output_folder, f"result-{csv_name}-{agg_func_name}.csv"), index=False)
+    removed_df.to_csv(os.path.join(args.output_folder, f"removed-{csv_name}-{agg_func_name}.csv"), index=False)
+
+    print("The removed tuples are: \n", removed_df)
