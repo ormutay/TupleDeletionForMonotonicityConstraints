@@ -5,37 +5,20 @@ import time
 import matplotlib.pyplot as plt
 import numpy as np
 import argparse
-from io import StringIO
 
-
-def run_algorithm(command, agg_col, gb_col):
+def run_algorithm(command, output_file):
     """Run an algorithm and return execution time and rows removed."""
     start_time = time.time()
     try:
         print(f"Running command: {' '.join(command)}")
-        result = subprocess.run(command, stdout=subprocess.PIPE, text=True, timeout=600)
+        subprocess.run(command, stdout=subprocess.PIPE, text=True, timeout=7200)
         execution_time = time.time() - start_time
 
-        # Extract removed tuples from output
-        rows_removed = pd.DataFrame()
-        output_lines = result.stdout.splitlines()
-        for line in output_lines:
-            if "The removed tuples are:" in line:
-                raw_data = '\n'.join(output_lines[output_lines.index(line) + 1:])
-                rows_removed = pd.read_csv(
-                    StringIO(raw_data),
-                    delim_whitespace=True,
-                    names=["index", gb_col, agg_col],  # Explicitly name columns
-                    usecols=[1, 2],  # Ignore the index column
-                    skiprows=1,  # Skip the repeated header
-                )
-                break
-
-        # Drop NaN rows if they exist
-        rows_removed = rows_removed.dropna()
+        # Read removed tuples directly from the saved CSV file
+        rows_removed = pd.read_csv(output_file)
 
         # Debugging output
-        print("Parsed Rows Removed DataFrame:\n", rows_removed)
+        print(f"Parsed Rows Removed DataFrame:\n{rows_removed}")
 
         return execution_time, rows_removed
 
@@ -74,13 +57,17 @@ def calculate_overlap_by_columns(dp_removed: pd.DataFrame, greedy_removed: pd.Da
     return overlap_count
 
 
-def compare_single_dataset(dataset_path, dp_command, greedy_command, output_folder, agg_col, gb_col):
+def compare_single_dataset(dataset_path, dp_command, greedy_command, output_folder, agg_col, gb_col, agg_func):
     """Compare DP and Greedy algorithms on a single dataset."""
     num_rows_in_dataset = pd.read_csv(dataset_path).shape[0]
 
-    # DP and Greedy command
-    dp_time, dp_removed = run_algorithm(dp_command, agg_col, gb_col)
-    greedy_time, greedy_removed = run_algorithm(greedy_command, agg_col, gb_col)
+    # Define output file paths
+    dp_output_file = os.path.join("dp-results", "dp-removed.csv")
+    greedy_output_file = os.path.join(output_folder, f"removed-{os.path.basename(dataset_path)}-{agg_func.upper()}.csv")
+
+    # DP and Greedy commands
+    dp_time, dp_removed = run_algorithm(dp_command, dp_output_file)
+    greedy_time, greedy_removed = run_algorithm(greedy_command, greedy_output_file)
 
     # Calculate overlap
     overlap_count = calculate_overlap_by_columns(dp_removed, greedy_removed, gb_col, agg_col)
@@ -88,9 +75,10 @@ def compare_single_dataset(dataset_path, dp_command, greedy_command, output_fold
     results = {
         "dataset": os.path.basename(dataset_path),
         "num_rows": num_rows_in_dataset,
-        "dp_time": dp_time,
+        "agg_func": agg_func,
+        "dp_time": round(dp_time, 4),
         "dp_removed_count": len(dp_removed),
-        "greedy_time": greedy_time,
+        "greedy_time": round(greedy_time, 4),
         "greedy_removed_count": len(greedy_removed),
         "overlap_count": overlap_count
     }
@@ -219,5 +207,5 @@ if __name__ == "__main__":
         "--output_folder", output_folder
     ]
     results = compare_single_dataset(dataset_path, DP_COMMAND_TEMPLATE, GREEDY_COMMAND_TEMPLATE, output_folder,
-                                     aggregation_column, grouping_column)
+                                     aggregation_column, grouping_column, aggregation_function)
     print("Comparison Results:", results)
