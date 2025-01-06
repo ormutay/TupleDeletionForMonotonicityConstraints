@@ -6,6 +6,7 @@ import os
 from tqdm import tqdm
 tqdm.pandas()
 from plots_for_main import plot_aggregation, plot_impact_per_iteration
+from sortedcontainers import SortedList
 
 # --- Preprocessing ---
 def preprocess_group_values_with_indices(df, grouping_column, aggregation_column):
@@ -136,12 +137,21 @@ def calculate_tuple_removal_impact_avg(group_data, group_stats, group_id, group_
 
     group_impacts[group_id] = impacts
 
-def calculate_tuple_removal_impact_median(group_data, group_stats, group_id, group_impacts):
+def calculate_tuple_removal_impact_median(group_data, group_stats, group_id, group_impacts, group_sorted_values):
     impacts = []
 
+    sorted_values = group_sorted_values[group_id]
+
     for value, indices in group_data[group_id].items():
-        remaining_values = [v for v in group_data[group_id] if v != value]
-        new_alpha = np.median(remaining_values) if remaining_values else 0
+        sorted_values.remove(value)
+
+        # Calculate the new median (faster then np.median as it the list is already sorted)
+        mid = len(sorted_values) // 2
+        if len(sorted_values) % 2 == 1:
+            new_alpha = sorted_values[mid]
+        else:
+            new_alpha = (sorted_values[mid - 1] + sorted_values[mid]) / 2
+
         impact, new_mvi, new_prev_mvi = calculate_impact(group_stats, group_id, new_alpha)
         for index in indices:
             impacts.append({
@@ -154,10 +164,12 @@ def calculate_tuple_removal_impact_median(group_data, group_stats, group_id, gro
                 "new_alpha": new_alpha
             })
 
+        sorted_values.add(value)
+
     group_impacts[group_id] = impacts
 
 
-def calculate_group_impacts(group, group_data, group_stats, agg_func, group_impacts, group_impact_calculated, group_sums=None, group_counts=None):
+def calculate_group_impacts(group, group_data, group_stats, agg_func, group_impacts, group_impact_calculated, group_sums, group_counts, group_sorted_values):
     if not group_impact_calculated[group]:
         if agg_func == "max":
             calculate_tuple_removal_impact_max(group_data, group_stats, group, group_impacts)
@@ -167,7 +179,7 @@ def calculate_group_impacts(group, group_data, group_stats, agg_func, group_impa
             calculate_tuple_removal_impact_avg(group_data, group_stats, group, group_impacts,
                                                group_sums, group_counts)
         elif agg_func == "median":
-            calculate_tuple_removal_impact_median(group_data, group_stats, group, group_impacts)
+            calculate_tuple_removal_impact_median(group_data, group_stats, group, group_impacts, group_sorted_values)
 
         group_impact_calculated[group] = True
 
@@ -182,12 +194,14 @@ def initialize_group_data_and_stats(df, grouping_column, aggregation_column, agg
     if agg_func in {"mean", "avg"}:
         group_sums = {group: sum(v * len(i) for v, i in group_data[group].items()) for group in group_data}
         group_counts = {group: sum(len(i) for i in group_data[group].values()) for group in group_data}
+    elif agg_func == "median":
+        group_sorted_values = {group: SortedList([v for v, idx_list in group_data[group].items() for _ in range(len(idx_list))]) for group in group_data}
 
     # Initialize group impact tracking
     group_impact_calculated = {group_id: False for group_id in group_stats}
     group_impacts = {group_id: [] for group_id in group_stats}
 
-    return group_data, group_stats, Smvi, group_sums, group_counts, group_impact_calculated, group_impacts
+    return group_data, group_stats, Smvi, group_sums, group_counts, group_impact_calculated, group_impacts, group_sorted_values
 
 def find_max_impact_data(group_impacts, violating_groups, additional_groups, agg_func):
     max_impact_data = None
@@ -228,7 +242,7 @@ def find_max_impact_data(group_impacts, violating_groups, additional_groups, agg
 
 
 def handle_removal_and_update(group_data, group_stats, max_impact_data, agg_func, group_sums, group_counts,
-                              removed_indices, group_impact_calculated):
+                              removed_indices, group_impact_calculated, group_sorted_values):
     max_impact_idx = max_impact_data["tuple_index"]
     max_impact_value = max_impact_data["value"]
     max_impact_group = max_impact_data["group_id"]
@@ -248,6 +262,8 @@ def handle_removal_and_update(group_data, group_stats, max_impact_data, agg_func
     if agg_func in {"mean", "avg"}:
         group_sums[max_impact_group] -= max_impact_value
         group_counts[max_impact_group] -= 1
+    elif agg_func == "median":
+        group_sorted_values[max_impact_group].remove(max_impact_value)
 
     group_impact_calculated[max_impact_group] = False
     if max_impact_group - 1 in group_stats:
@@ -281,7 +297,7 @@ def greedy_algorithm(df, agg_func, grouping_column, aggregation_column, output_c
     removed_indices = []
     debug_data = []
 
-    group_data, group_stats, Smvi, group_sums, group_counts, group_impact_calculated, group_impacts = initialize_group_data_and_stats(df, grouping_column, aggregation_column, agg_func)
+    group_data, group_stats, Smvi, group_sums, group_counts, group_impact_calculated, group_impacts, group_sorted_values = initialize_group_data_and_stats(df, grouping_column, aggregation_column, agg_func)
 
     progress_bar = tqdm(desc="Greedy loop", unit=" iteration")
     while Smvi > 0:
@@ -298,7 +314,7 @@ def greedy_algorithm(df, agg_func, grouping_column, aggregation_column, output_c
 
         for group in violating_groups:
             calculate_group_impacts(group, group_data, group_stats, agg_func, group_impacts,
-                                    group_impact_calculated, group_sums, group_counts)
+                                    group_impact_calculated, group_sums, group_counts, group_sorted_values)
 
         # Find the maximum impact
         max_impact_data = find_max_impact_data(group_impacts, violating_groups, additional_groups, agg_func)
@@ -313,7 +329,8 @@ def greedy_algorithm(df, agg_func, grouping_column, aggregation_column, output_c
         num_tuples_to_remove, max_impact_group, max_impact_value = handle_removal_and_update(group_data, group_stats,
                                                                                              max_impact_data, agg_func,
                                                                                              group_sums, group_counts,
-                                                                                             removed_indices, group_impact_calculated)
+                                                                                             removed_indices, group_impact_calculated,
+                                                                                             group_sorted_values)
 
 
         log_iteration(iteration_logs, iteration, Smvi, max_impact_group, max_impact_value,
@@ -325,7 +342,7 @@ def greedy_algorithm(df, agg_func, grouping_column, aggregation_column, output_c
 
         tuple_removals += num_tuples_to_remove
         iteration += 1
-        progress_bar.set_postfix({"Current Smvi": Smvi, "Fallback Used": fallback_used})
+        progress_bar.set_postfix({"Current Smvi": Smvi, "Fallback Used": fallback_used}, "violating groups", len(violating_groups))
         progress_bar.update(1)
 
     progress_bar.close()
@@ -363,7 +380,8 @@ if __name__ == "__main__":
     df = pd.read_csv(args.csv_file)[[args.grouping_column, args.aggregation_column]].copy()
 
     # todo: hack because price is << 1:
-    if args.csv_file == "may_transactions.csv" or args.csv_file == "may_transactions-reduced.csv":
+    if "may_transactions" in csv_name:
+        print("Multiplying 'price' by 1,000,000 to handle numerical instability")
         df['price'] = df['price']*1000000
 
     output_csv = os.path.join(args.output_folder, f"logs-{csv_name}-{agg_func_name}.csv")
@@ -385,7 +403,9 @@ if __name__ == "__main__":
     plot_impact_per_iteration(output_csv, f"{args.output_folder}/plots/impact_per_iteration-{agg_func_name}-{csv_name}.pdf")
 
     print("Saving results to csv...")
-    result_df.to_csv(os.path.join(args.output_folder, f"result-{csv_name}-{agg_func_name}.csv"), index=False)
-    removed_df.to_csv(os.path.join(args.output_folder, f"removed-{csv_name}-{agg_func_name}.csv"), index=False)
+    result_df["original_index"] = result_df.index
+    removed_df["original_index"] = removed_df.index
+    result_df.to_csv(os.path.join(args.output_folder, f"result-{csv_name}-{agg_func_name}.csv"), index=True)
+    removed_df.to_csv(os.path.join(args.output_folder, f"removed-{csv_name}-{agg_func_name}.csv"), index=True)
 
     print("The removed tuples are: \n", removed_df)

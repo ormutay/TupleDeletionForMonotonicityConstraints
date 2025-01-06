@@ -7,3 +7,6 @@
  results_plots/
  claim endorse/
  .idea/misc.xml
+ datasets/german.data
+ run_config.py
+ datasets/
