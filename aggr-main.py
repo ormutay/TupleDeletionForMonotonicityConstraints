@@ -138,38 +138,7 @@ def calculate_tuple_removal_impact_avg(groups_data, groups_stats, group_id, grou
     groups_impacts[group_id] = impacts
 
 
-def v2_calculate_tuple_removal_impact_median(groups_stats, group_id, groups_impacts, groups_sorted_values, groups_count):
-    impacts = []
-
-    sorted_values = groups_sorted_values[group_id]
-    len_after_removal = groups_count[group_id] - 1
-    median_idx = len_after_removal // 2
-    odd_number_of_elements = len_after_removal % 2 == 1
-
-    for value, index in sorted_values:
-        sorted_values.remove((value, index))
-
-        if odd_number_of_elements:
-            new_alpha = sorted_values[median_idx][0]
-        else:
-            new_alpha = (sorted_values[median_idx - 1][0] + sorted_values[median_idx][0]) / 2
-
-        impact, new_mvi, new_prev_mvi = calculate_impact(groups_stats, group_id, new_alpha)
-        impacts.append({
-            "tuple_index": index,
-            "value": value,
-            "impact": impact,
-            "group_id": group_id,
-            "new_mvi": new_mvi,
-            "new_prev_mvi": new_prev_mvi,
-            "new_alpha": new_alpha
-        })
-
-        sorted_values.add((value, index))
-
-    groups_impacts[group_id] = impacts
-
-def v3_calculate_tuple_removal_impact_median(groups_stats, group_id, groups_impacts, groups_sorted_values, groups_count):
+def calculate_tuple_removal_impact_median(groups_stats, group_id, groups_impacts, groups_sorted_values, groups_count):
     impacts = []
 
     sorted_values = groups_sorted_values[group_id]
@@ -177,29 +146,38 @@ def v3_calculate_tuple_removal_impact_median(groups_stats, group_id, groups_impa
     current_median_idx = group_count // 2
     odd_number_of_elements = group_count % 2 == 1
 
-    if odd_number_of_elements:
-        new_alpha_index_smaller_than_median = (sorted_values[current_median_idx][0] + sorted_values[current_median_idx + 1][0]) / 2
-        new_alpha_index_equal_than_median = (sorted_values[current_median_idx - 1][0] + sorted_values[current_median_idx + 1][0]) / 2
-        new_alpha_index_bigger_than_median = (sorted_values[current_median_idx - 1][0] + sorted_values[current_median_idx][0]) / 2
-    else:
-        new_alpha_index_smaller_than_median = sorted_values[current_median_idx][0]
-        new_alpha_index_equal_than_median = sorted_values[current_median_idx - 1][0]
-        new_alpha_index_bigger_than_median = sorted_values[current_median_idx - 1][0]
+    med_val = sorted_values[current_median_idx][0]
+    before_med_val = sorted_values[current_median_idx-1][0]
+    after_med_val = sorted_values[current_median_idx+1][0]
 
-    impact_smaller, new_mvi_smaller, new_prev_mvi_smaller = calculate_impact(groups_stats, group_id, new_alpha_index_smaller_than_median)
-    impact_equal, new_mvi_equal, new_prev_mvi_equal = calculate_impact(groups_stats, group_id, new_alpha_index_equal_than_median)
-    impact_bigger, new_mvi_bigger, new_prev_mvi_bigger = calculate_impact(groups_stats, group_id, new_alpha_index_bigger_than_median)
+    if odd_number_of_elements:
+        new_medians = {
+            "smaller_than": (med_val + after_med_val) / 2,
+            "equal_to": (before_med_val + after_med_val) / 2,
+            "greater_than": (before_med_val + med_val) / 2
+        }
+    else:
+        new_medians = {
+            "smaller_than": med_val,
+            "equal_to": before_med_val,
+            "greater_than": before_med_val
+        }
+
+    impact_cache = {
+        key: calculate_impact(groups_stats, group_id, new_med)
+        for key, new_med in new_medians.items()
+    }
 
     for list_index, (value, df_index) in enumerate(sorted_values):
         if list_index < current_median_idx:
-            new_alpha = new_alpha_index_smaller_than_median
-            impact, new_mvi, new_prev_mvi = impact_smaller, new_mvi_smaller, new_prev_mvi_smaller
+            new_key = "smaller_than"
         elif list_index == current_median_idx:
-            new_alpha = new_alpha_index_equal_than_median
-            impact, new_mvi, new_prev_mvi = impact_equal, new_mvi_equal, new_prev_mvi_equal
+            new_key = "equal_to"
         else:
-            new_alpha = new_alpha_index_bigger_than_median
-            impact, new_mvi, new_prev_mvi = impact_bigger, new_mvi_bigger, new_prev_mvi_bigger
+            new_key = "greater_than"
+
+        new_alpha = new_medians[new_key]
+        impact, new_mvi, new_prev_mvi = impact_cache[new_key]
 
         impacts.append({
             "tuple_index": df_index,
@@ -214,62 +192,6 @@ def v3_calculate_tuple_removal_impact_median(groups_stats, group_id, groups_impa
     groups_impacts[group_id] = impacts
 
 
-from bisect import bisect_left, bisect_right
-
-def v4_count_ranges(sorted_list, lower_bound, upper_bound):
-    # Find indices using binary search
-    low_index = bisect_left(sorted_list, lower_bound)  # First index >= lower_bound
-    high_index = bisect_right(sorted_list, upper_bound)  # First index > upper_bound
-
-    # Calculate counts
-    below_count = low_index  # Values before `low_index`
-    between_count = high_index - low_index  # Values in range [lower_bound, upper_bound]
-    above_count = len(sorted_list) - high_index  # Values after `high_index`
-
-    return below_count, between_count, above_count
-
-
-def v4_new_calculate_tuple_removal_impact_median(groups_stats, group_id, groups_impacts, groups_sorted_values, groups_count):
-    impacts = []
-
-    sorted_values = groups_sorted_values[group_id]
-    lower_bound = groups_stats[group_id-1]["Alpha(A_i)"]
-    upper__bound = groups_stats[group_id-1]["Alpha(A_i)"]
-    below_count, between_count, above_count = v4_count_ranges(sorted_values, lower_bound, upper__bound)
-    num_tuples_to_remove_from_start = 0
-    num_tuples_to_remove_from_end = 0
-
-    #todo the problem is that both ifs can happen, and I want to be able to calculate for both and also in the end delete togther the relevent tuples
-    if groups_stats[group_id - 1]["MVI"] > 0: #med to low
-        num_tuples_to_remove_from_start = below_count - between_count - above_count
-        new_sorted_values = sorted_values[num_tuples_to_remove_from_start:]
-        removed_tuples = sorted_values[:num_tuples_to_remove_from_start]
-
-    if groups_stats[group_id]["MVI"] > 0: #med to high
-        num_tuples_to_remove_from_end = above_count - below_count - between_count
-        new_sorted_values = sorted_values[:-num_tuples_to_remove_from_end]
-        removed_tuples = sorted_values[-num_tuples_to_remove_from_end:]
-
-    new_len = len(new_sorted_values)
-    if new_len % 2 == 1:
-        new_alpha =  new_sorted_values[new_len // 2]
-    else:
-        new_alpha = (new_sorted_values[new_len // 2 - 1] + new_sorted_values[new_len // 2]) / 2
-
-    impact, new_mvi, new_prev_mvi = calculate_impact(groups_stats, group_id, new_alpha)
-    for value, index in removed_tuples:
-        impacts.append({
-            "tuple_index": index,
-            "value": value,
-            "impact": impact,
-            "group_id": group_id,
-            "new_mvi": new_mvi,
-            "new_prev_mvi": new_prev_mvi,
-            "new_alpha": new_alpha
-        })
-    groups_impacts[group_id] = impacts
-
-
 def calculate_groups_impacts(group, groups_data, groups_stats, agg_func, groups_impacts, group_impact_calculated, groups_sum, groups_count, groups_sorted_values):
     if not group_impact_calculated[group]:
         if agg_func == "max":
@@ -280,7 +202,7 @@ def calculate_groups_impacts(group, groups_data, groups_stats, agg_func, groups_
             calculate_tuple_removal_impact_avg(groups_data, groups_stats, group, groups_impacts,
                                                groups_sum, groups_count)
         elif agg_func == "median":
-            v3_calculate_tuple_removal_impact_median(groups_stats, group, groups_impacts, groups_sorted_values, groups_count)
+            calculate_tuple_removal_impact_median(groups_stats, group, groups_impacts, groups_sorted_values, groups_count)
 
         group_impact_calculated[group] = True
 
