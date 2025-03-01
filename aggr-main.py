@@ -117,6 +117,10 @@ def calculate_tuple_removal_impact_avg(groups_data, groups_stats, group_id, grou
     """Calculate impact of removing each tuple in a group for avg aggregation."""
     impacts = []
 
+    if group_id not in groups_data:
+        groups_impacts[group_id] = impacts
+        return
+
     for value, indices in groups_data[group_id].items():
         if groups_count[group_id] > 1:
             new_alpha = (groups_sum[group_id] - value) / (groups_count[group_id] - 1)
@@ -140,6 +144,9 @@ def calculate_tuple_removal_impact_avg(groups_data, groups_stats, group_id, grou
 
 def calculate_tuple_removal_impact_median(groups_stats, group_id, groups_impacts, groups_sorted_values, groups_count):
     impacts = []
+    if group_id not in groups_sorted_values:
+        groups_impacts[group_id] = impacts
+        return
 
     sorted_values = groups_sorted_values[group_id]
     group_count = groups_count[group_id]
@@ -147,8 +154,8 @@ def calculate_tuple_removal_impact_median(groups_stats, group_id, groups_impacts
     odd_number_of_elements = (group_count-1) % 2 == 1
 
     med_val = sorted_values[current_median_idx][0]
-    before_med_val = sorted_values[current_median_idx-1][0]
-    after_med_val = sorted_values[current_median_idx+1][0]
+    before_med_val = sorted_values[current_median_idx-1][0] if current_median_idx - 1 >= 0 else med_val
+    after_med_val = sorted_values[current_median_idx+1][0] if current_median_idx + 1 < len(sorted_values) else med_val
 
     if odd_number_of_elements:
         new_medians = {
@@ -295,6 +302,8 @@ def handle_removal_and_update(groups_data, groups_stats, max_impact_data, agg_fu
     elif agg_func == "median":
         groups_count[max_impact_group] -= 1
         groups_sorted_values[max_impact_group].remove((max_impact_value, max_impact_idx))
+        if not groups_sorted_values[max_impact_group]:
+            del groups_sorted_values[max_impact_group]
 
     group_impact_calculated[max_impact_group] = False
     if max_impact_group - 1 in groups_stats:
