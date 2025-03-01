@@ -144,7 +144,7 @@ def calculate_tuple_removal_impact_median(groups_stats, group_id, groups_impacts
     sorted_values = groups_sorted_values[group_id]
     group_count = groups_count[group_id]
     current_median_idx = group_count // 2
-    odd_number_of_elements = group_count % 2 == 1
+    odd_number_of_elements = (group_count-1) % 2 == 1
 
     med_val = sorted_values[current_median_idx][0]
     before_med_val = sorted_values[current_median_idx-1][0]
@@ -152,15 +152,15 @@ def calculate_tuple_removal_impact_median(groups_stats, group_id, groups_impacts
 
     if odd_number_of_elements:
         new_medians = {
-            "smaller_than": (med_val + after_med_val) / 2,
-            "equal_to": (before_med_val + after_med_val) / 2,
-            "greater_than": (before_med_val + med_val) / 2
-        }
-    else:
-        new_medians = {
             "smaller_than": med_val,
             "equal_to": before_med_val,
             "greater_than": before_med_val
+        }
+    else:
+        new_medians = {
+            "smaller_than": (med_val + after_med_val) / 2,
+            "equal_to": (before_med_val + after_med_val) / 2,
+            "greater_than": (before_med_val + med_val) / 2
         }
 
     impact_cache = {
@@ -409,11 +409,6 @@ if __name__ == "__main__":
 
     df = pd.read_csv(args.csv_file)[[args.grouping_column, args.aggregation_column]].copy()
 
-    # todo: hack because price is << 1:
-    if "may_transactions" in csv_name:
-        print("Multiplying 'price' by 1,000,000 to handle numerical instability")
-        df['price'] = df['price']*10000
-
     output_csv = os.path.join(args.output_folder, f"logs-{csv_name}-{agg_func_name}.csv")
     result_df, removed_df = greedy_algorithm(df, pandas_agg_func, grouping_column=args.grouping_column, aggregation_column=args.aggregation_column, output_csv=output_csv)
     print("\033[1mFinished running the greedy algorithm.\033[0m")
@@ -433,8 +428,6 @@ if __name__ == "__main__":
     plot_impact_per_iteration(output_csv, f"{args.output_folder}/plots/impact_per_iteration-{agg_func_name}-{csv_name}.pdf")
 
     print("Saving results to csv...")
-    result_df["original_index"] = result_df.index
-    removed_df["original_index"] = removed_df.index
     result_df.to_csv(os.path.join(args.output_folder, f"result-{csv_name}-{agg_func_name}.csv"), index=True)
     removed_df.to_csv(os.path.join(args.output_folder, f"removed-{csv_name}-{agg_func_name}.csv"), index=True)
 
