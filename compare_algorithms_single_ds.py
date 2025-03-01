@@ -62,7 +62,7 @@ def compare_single_dataset(dataset_path, dp_command, greedy_command, output_fold
     num_rows_in_dataset = pd.read_csv(dataset_path).shape[0]
 
     # Define output file paths
-    dp_output_file = os.path.join("dp-results", "dp-removed.csv")
+    dp_output_file = f"dp_res/removed_{os.path.basename(dataset_path)}"
     greedy_output_file = os.path.join(output_folder, f"removed-{os.path.basename(dataset_path)}-{agg_func.upper()}.csv")
 
     # DP and Greedy commands
