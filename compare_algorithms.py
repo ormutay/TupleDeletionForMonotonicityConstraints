@@ -20,14 +20,16 @@ def run_algorithm(command, is_dp=False, timeout=600):
             if "Total tuple removals" in line:
                 rows_removed = int(float(line.split(":")[-1].strip()))
         if rows_removed is None:
-            #raise and error
-            raise ValueError(f"Unexpected output line,: {line}, is_dp: {is_dp}")
+            # #raise and error
+            # raise ValueError(f"Unexpected output line,: {line}, is_dp: {is_dp}")
+            return {"time": None, "rows_removed": None}  # Return None for failure
 
         return {"time": execution_time, "rows_removed": rows_removed}
 
-    except subprocess.TimeoutExpired:
-        print(f"Command timed out: {' '.join(command)}")
-        return {"time": None, "rows_removed": None}  # Return None for timeout
+    except (subprocess.TimeoutExpired, ValueError) as e:
+        print(f"Error running command: {e}")
+        return {"time": None, "rows_removed": None}  # Return None for failure
+
 
 # Helper function to process a single dataset
 def process_single_dataset(dataset_path, greedy_algo_path, dp_algo_path, agg_function, timeout, results_folder, group_column, agg_column, output_folder):
@@ -104,7 +106,8 @@ def plot_results(results, output_folder, x_axis, x_label, agg_function):
 
     # Calculate the percentage of rows removed
     results["greedy_rows_removed_pct"] = (results["greedy_rows_removed"] / results["num_rows"]) * 100
-    results["dp_rows_removed_pct"] = (results["dp_rows_removed"] / results["num_rows"]) * 100
+    results["dp_rows_removed_pct"] = (results["dp_rows_removed"] / results[
+        "num_rows"]) * 100 if "dp_rows_removed" in results else None
 
     # Group by the specified x-axis and calculate the mean
     grouped = results.groupby(x_axis).mean().sort_index()
@@ -112,7 +115,9 @@ def plot_results(results, output_folder, x_axis, x_label, agg_function):
     # Plot 1: Percentage of Rows Removed vs. x_axis
     plt.figure(figsize=(24, 14))
     plt.plot(grouped.index, grouped["greedy_rows_removed_pct"], marker='o', label="Greedy Algorithm", linewidth=6)
-    plt.plot(grouped.index, grouped["dp_rows_removed_pct"], marker='o', linestyle="--", label="DP Algorithm", linewidth=6)
+    if "dp_rows_removed_pct" in grouped and not grouped["dp_rows_removed_pct"].isna().all():
+        plt.plot(grouped.index, grouped["dp_rows_removed_pct"], marker='o', linestyle="--", label="DP Algorithm",
+                 linewidth=6)
     plt.xlabel(x_label, fontsize=28)
     plt.ylabel("Mean Percentage of Rows Removed (%)", fontsize=28)
     plt.tick_params(axis='both', which='major', labelsize=24)
