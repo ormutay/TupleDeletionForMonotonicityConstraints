@@ -2,6 +2,7 @@ import pandas as pd
 import random
 import matplotlib.pyplot as plt
 import os
+import concurrent.futures
 
 def create_dataset(
         num_groups, num_rows, agg_func_name, output_folder="dataset",
@@ -34,7 +35,6 @@ def create_dataset(
         disrupting_groups_count = num_groups
 
     groups = [i % num_groups + 1 for i in range(monotonic_rows)]
-    random.shuffle(groups)
     B_values = [random.randint(1, 100) for _ in range(monotonic_rows)]
     df = pd.DataFrame({"A": groups, "B": B_values})
 
@@ -58,7 +58,7 @@ def create_dataset(
     assert all(
         temp_group_agg.iloc[i]["B"] <= temp_group_agg.iloc[i + 1]["B"]
         for i in range(len(temp_group_agg) - 1)
-    ), "Final dataset is not monotonic."
+    ), "re-ordered dataset is not monotonic."
 
     violation_groups = random.sample(list(group_mapping.values()), disrupting_groups_count)
     violation_data = []
@@ -134,44 +134,56 @@ def plot_dataset(df, group_agg, agg_func_name, output_folder, index, name_suffix
     plt.close()
     print(f"Plots saved to {scatter_plot_file} and {bar_plot_file}")
 
+
+def generate_dataset(config, param_value, i, agg_func):
+    """Helper function to create a dataset with given parameters."""
+    create_dataset(
+        num_groups=config.get('num_groups', param_value),
+        num_rows=config.get('num_rows', param_value),
+        agg_func_name=agg_func,
+        output_folder=f"final-df/dataset-{agg_func}/{config['folder']}",
+        index=i,
+        violations_percentage=config.get('violations_percentage', param_value),
+        disrupting_groups_count=3,
+        name_suffix=f"{agg_func}_g{config.get('num_groups', param_value)}_r{config.get('num_rows', param_value)}_v{config.get('violations_percentage', param_value)}"
+    )
+
+
 if __name__ == "__main__":
     num_datasets_per_setting = 3
     agg_funcs = ["sum", "max", "avg", "median"]
     configurations = [
-        { #rows
-            'range': range(100, 300, 100),
+        { # Rows
+            'range': range(100, 1100, 100),
             'folder': 'rows',
             'agg_funcs': agg_funcs,
             'num_groups': 10,
             'violations_percentage': 10,
         },
-        { #groups
-            'range': range(5, 15, 5),
+        { # Groups
+            'range': range(5, 55, 5),
             'folder': 'groups',
             'agg_funcs': agg_funcs,
-            'num_rows': 100,
+            'num_rows': 1000,
             'violations_percentage': 10,
         },
-        { #violations
-            'range': range(5, 15, 5),
+        { # Violations
+            'range': range(5, 55, 5),
             'folder': 'violations',
             'agg_funcs': agg_funcs,
             'num_groups': 10,
-            'num_rows': 100,
+            'num_rows': 1000,
         }
     ]
 
-    for config in configurations:
-        for param_value in config['range']:
-            for i in range(num_datasets_per_setting):
-                for agg_func in config['agg_funcs']:
-                    create_dataset(
-                        num_groups=config.get('num_groups', param_value),
-                        num_rows=config.get('num_rows', param_value),
-                        agg_func_name=agg_func,
-                        output_folder=f"dataset-{agg_func}",
-                        index=i,
-                        violations_percentage=config.get('violations_percentage', param_value),
-                        disrupting_groups_count=3,
-                        name_suffix=f"{agg_func}_g{config.get('num_groups', param_value)}_r{config.get('num_rows', param_value)}_v{config.get('violations_percentage', param_value)}"
-                    )
+    # Use ProcessPoolExecutor to parallelize dataset creation
+    with concurrent.futures.ProcessPoolExecutor() as executor:
+        futures = []
+        for config in configurations:
+            for param_value in config['range']:
+                for i in range(num_datasets_per_setting):
+                    for agg_func in config['agg_funcs']:
+                        futures.append(executor.submit(generate_dataset, config, param_value, i, agg_func))
+
+        # Wait for all tasks to complete
+        concurrent.futures.wait(futures)
