@@ -16,24 +16,12 @@ def run_algorithm(command, is_dp=False, timeout=600):
         execution_time = end_time - start_time
 
         rows_removed = None
-        if is_dp:
-            # DP algorithm: parse "The removed tuples are:" section
-            output_lines = result.stdout.splitlines()
-            in_removed_section = False
-            rows_removed = 0
-            for line in output_lines:
-                if "The removed tuples are:" in line:
-                    in_removed_section = True
-                    continue
-                if in_removed_section:
-                    if line.strip() == "":  # End of section
-                        break
-                    rows_removed += 1  # Count each row in the removed tuples section
-        else:
-            # Greedy algorithm: parse "Total tuple removals"
-            for line in result.stdout.splitlines():
-                if "Total tuple removals" in line:
-                    rows_removed = int(float(line.split(":")[-1].strip()))
+        for line in result.stdout.splitlines():
+            if "Total tuple removals" in line:
+                rows_removed = int(float(line.split(":")[-1].strip()))
+        if rows_removed is None:
+            #raise and error
+            raise ValueError(f"Unexpected output line,: {line}, is_dp: {is_dp}")
 
         return {"time": execution_time, "rows_removed": rows_removed}
 
@@ -104,7 +92,7 @@ def process_datasets_parallel(dataset_folder, greedy_algo_path, dp_algo_path, ag
 
     return pd.DataFrame(results)
 
-def plot_results(results, output_folder, x_axis, x_label):
+def plot_results(results, output_folder, x_axis, x_label, agg_function):
     print(f"Preparing data for plots with {x_axis} as x-axis...")
 
     # Ensure numeric data for aggregation
@@ -130,7 +118,7 @@ def plot_results(results, output_folder, x_axis, x_label):
     plt.title(f"Percentage of Rows Removed by Algorithms ({x_label})")
     plt.legend()
     plt.grid(True)
-    plt.savefig(os.path.join(output_folder, f"rows_removed_percentage_comparison_{x_axis}.pdf"), format='pdf')
+    plt.savefig(os.path.join(output_folder, f"rows_removed_percentage_comparison_{agg_function}_{x_axis}.pdf"), format='pdf')
     plt.show()
 
     # Plot 2: Execution Time vs. x_axis (Logarithmic Scale)
@@ -143,11 +131,10 @@ def plot_results(results, output_folder, x_axis, x_label):
     plt.title(f"Execution Time of Algorithms ({x_label}) [Log Scale]")
     plt.legend()
     plt.grid(True, which="both", linestyle="--", linewidth=0.5)
-    plt.savefig(os.path.join(output_folder, f"execution_time_comparison_{x_axis}(log).pdf"), format='pdf')
+    plt.savefig(os.path.join(output_folder, f"execution_time_comparison_{agg_function}_{x_axis}(log).pdf"), format='pdf')
     plt.show()
 
     print(f"Plots saved successfully under {output_folder} folder.")
-
 
 #python/py -3.13 compare_algorithms.py --agg_function <agg_function> --dataset_folder <dataset_folder> --results_folder <results_folder> --timeout_min <timeout_min> --grouping_column <grouping_column> --aggregation_column <aggregation_column>
 if __name__ == "__main__":
@@ -184,8 +171,8 @@ if __name__ == "__main__":
 
         results.to_csv(os.path.join(output_folder, "comparison_results.csv"), index=False)
         if folder == "rows":
-            plot_results(results, output_folder, "num_rows", "Number of Rows")
+            plot_results(results, output_folder, "num_rows", "Number of Rows", agg_function)
         elif folder == "groups":
-            plot_results(results, output_folder, "num_groups", "Number of Groups")
+            plot_results(results, output_folder, "num_groups", "Number of Groups", agg_function)
         elif folder == "violations":
-            plot_results(results, output_folder, "violation_percentage", "Violation Percentage")
+            plot_results(results, output_folder, "violation_percentage", "Violation Percentage", agg_function)
