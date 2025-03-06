@@ -57,7 +57,6 @@ def is_monotonic(df, group_col, agg_col, agg_func):
 #     return df_after_outlier_removal, removed
 
 def remove_outliers(df, outliers, max_removal_pct, agg_func, group_col, agg_col):
-    """Gradually remove outliers until monotonicity is restored or max_removal_pct is reached."""
     df_after_outlier_removal = df.copy()
     total_rows = len(df)
 
@@ -133,6 +132,9 @@ if __name__ == "__main__":
           f"{BLUE_BOLD}method parameter:{RESET} {BOLD}{method_param}{RESET}")
 
     df = load_dataset(args.dataset_path)
+    df = df.dropna() #does not modify the original dataframe
+    #todo delete this is just for testing
+    #df = df.sample(n=500000, random_state=42)
     dataset_name = os.path.basename(args.dataset_path).replace(".csv", "")
 
     methods = {

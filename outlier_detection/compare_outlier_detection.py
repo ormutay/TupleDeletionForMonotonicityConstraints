@@ -77,11 +77,12 @@ def run_combination(dataset_path, agg_func, grouping_col, agg_col, output_folder
         "total_time": outlier_time + greedy_results["greedy_time"],
     })
 
+"""
 def run_outlier_methods_parallels(dataset_path, agg_func, grouping_col, agg_col, output_folder, results):
-    max_removal_pcts = [0.01, 0.05]
+    max_removal_pcts = [0.005, 0.01, 0.05]
 
     z_score_values = [1.0, 1.5, 2.0, 2.5, 3.0]
-    knn_neighbors_values = [5, 10, 15, 20]
+    knn_neighbors_values = [3, 5, 8, 10]
     isolation_contamination_values = [0.01, 0.05, 0.1, 0.2]
 
     with concurrent.futures.ThreadPoolExecutor() as executor:
@@ -104,14 +105,14 @@ def run_outlier_methods_parallels(dataset_path, agg_func, grouping_col, agg_col,
 
         # Wait for all tasks to complete
         for future in concurrent.futures.as_completed(futures):
-            future.result()  # Ensure any exceptions are raised
-
+         future.result()  # Ensure any exceptions are raised
+"""
 
 def run_outlier_methods(dataset_path, agg_func, grouping_col, agg_col, output_folder, results):
-    max_removal_pcts = [0.01, 0.05]
+    max_removal_pcts = [0.005, 0.01, 0.05]
 
     z_score_values = [1.0, 1.5, 2.0, 2.5, 3.0]
-    knn_neighbors_values = [5, 10, 15, 20]
+    knn_neighbors_values = [3, 5, 8, 10]
     isolation_contamination_values = [0.01, 0.05, 0.1, 0.2]
 
     # z_score
@@ -131,7 +132,6 @@ def run_outlier_methods(dataset_path, agg_func, grouping_col, agg_col, output_fo
         for max_removal_pct in max_removal_pcts:
             run_combination(dataset_path, agg_func, grouping_col, agg_col, output_folder, results, "isolation_forest",
                             param, max_removal_pct)
-
 
 
 if __name__ == "__main__":
@@ -154,8 +154,9 @@ if __name__ == "__main__":
     greedy_results = run_greedy(args.dataset_path, args.agg_func, args.grouping_col, args.agg_col, args.output_folder)
 
     # Convert results to DataFrame and save
+    dataset_name = os.path.splitext(os.path.basename(args.dataset_path))[0]
     outlier_results_df = pd.DataFrame(outlier_results)
-    outlier_results_df.to_csv(os.path.join(args.output_folder, "outlier_results.csv"), index=False)
+    outlier_results_df.to_csv(os.path.join(args.output_folder, f"outlier_results-{dataset_name}-{args.agg_func}.csv"), index=False)
     print(greedy_results)
     # greedy_results_df = pd.DataFrame(greedy_results)
     # greedy_results_df.to_csv(os.path.join(args.output_folder, "greedy_results.csv"), index=False)
