@@ -401,6 +401,7 @@ def greedy_algorithm(df, agg_func, grouping_column, aggregation_column, output_c
 
 # --- Main ---
 if __name__ == "__main__":
+    PLOT = False
     parser = argparse.ArgumentParser(description="Run the greedy algorithm with a specified aggregation function.")
     parser.add_argument("csv_file", type=str, help="The path to the input CSV file.")
     parser.add_argument("agg_func", type=str, choices=["sum", "max", "avg", "median"], help="The aggregation function to use.")
@@ -418,26 +419,31 @@ if __name__ == "__main__":
 
     df = pd.read_csv(args.csv_file)[[args.grouping_column, args.aggregation_column]].copy()
 
+    start = time.time()
     output_csv = os.path.join(args.output_folder, f"logs-{csv_name}-{agg_func_name}.csv")
     result_df, removed_df = greedy_algorithm(df, pandas_agg_func, grouping_column=args.grouping_column, aggregation_column=args.aggregation_column, output_csv=output_csv)
-    print("\033[1mFinished running the greedy algorithm.\033[0m")
+    print(f"\033[1mFinished running the greedy algorithm in {time.time()-start} seconds.\033[0m")
 
-    print("Plotting results...")
-    # Plot aggregated values before and after the algorithm
-    plot_aggregation(df, args.grouping_column, args.aggregation_column,
-                     f"Before Algorithm - {csv_name}({agg_func_name})",
-                     f"{args.output_folder}/plots/before_algorithm-{agg_func_name}-{csv_name}.pdf",
-                     pandas_agg_func, agg_func_name)
-    plot_aggregation(result_df, args.grouping_column, args.aggregation_column,
-                     f"After Algorithm - {csv_name}({agg_func_name})",
-                     f"{args.output_folder}/plots/after_algorithm.pdf-{agg_func_name}-{csv_name}.pdf",
-                     pandas_agg_func, agg_func_name)
-
-    # Plot impact per iteration
-    plot_impact_per_iteration(output_csv, f"{args.output_folder}/plots/impact_per_iteration-{agg_func_name}-{csv_name}.pdf")
+    print(f"removed {len(removed_df)} tuples. Group stats: {removed_df[args.grouping_column].value_counts()}")
 
     print("Saving results to csv...")
     result_df.to_csv(os.path.join(args.output_folder, f"result-{csv_name}-{agg_func_name}.csv"), index=True)
     removed_df.to_csv(os.path.join(args.output_folder, f"removed-{csv_name}-{agg_func_name}.csv"), index=True)
 
-    print("The removed tuples are: \n", removed_df)
+    #print("The removed tuples are: \n", removed_df)
+
+    if PLOT:
+        print("Plotting results...")
+        # Plot aggregated values before and after the algorithm
+        plot_aggregation(df, args.grouping_column, args.aggregation_column,
+                         f"Before Algorithm - {csv_name}({agg_func_name})",
+                         f"{args.output_folder}/plots/before_algorithm-{agg_func_name}-{csv_name}.pdf",
+                         pandas_agg_func, agg_func_name)
+        plot_aggregation(result_df, args.grouping_column, args.aggregation_column,
+                         f"After Algorithm - {csv_name}({agg_func_name})",
+                         f"{args.output_folder}/plots/after_algorithm.pdf-{agg_func_name}-{csv_name}.pdf",
+                         pandas_agg_func, agg_func_name)
+
+        # Plot impact per iteration
+        plot_impact_per_iteration(output_csv, f"{args.output_folder}/plots/impact_per_iteration-{agg_func_name}-{csv_name}.pdf")
+

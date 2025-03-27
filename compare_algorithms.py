@@ -10,6 +10,7 @@ import argparse
 # Function to run an algorithm and measure rows removed and execution time
 def run_algorithm(command, is_dp=False, timeout=600):
     start_time = time.time()
+    print(command)
     try:
         result = subprocess.run(command, stdout=subprocess.PIPE, text=True, timeout=timeout)
         end_time = time.time()
@@ -19,9 +20,9 @@ def run_algorithm(command, is_dp=False, timeout=600):
         for line in result.stdout.splitlines():
             if "Total tuple removals" in line:
                 rows_removed = int(float(line.split(":")[-1].strip()))
+            elif "Num removed tuples" in line:
+                rows_removed = int(float(line.split(":")[-1].strip().split("/")[0]))
         if rows_removed is None:
-            # #raise and error
-            # raise ValueError(f"Unexpected output line,: {line}, is_dp: {is_dp}")
             return {"time": None, "rows_removed": None}  # Return None for failure
 
         return {"time": execution_time, "rows_removed": rows_removed}
@@ -36,11 +37,18 @@ def process_single_dataset(dataset_path, greedy_algo_path, dp_algo_path, agg_fun
     print(f"Processing dataset: {dataset_path}")
     filename = os.path.basename(dataset_path)
 
-    # Extract parameters from filename
-    num_rows = int(filename.split("_")[3][1:])
-    num_groups = int(filename.split("_")[2][1:]) if "_g" in filename else None
-    violation_percentage = int(filename.split("_")[4][1:]) if "_v" in filename else None
-    index = int(filename.split("_")[-1].split(".")[0])  # Extract index from filename
+    try:
+        # Extract parameters from filename
+        num_rows = int(filename.split("_")[3][1:])
+        num_groups = int(filename.split("_")[2][1:]) if "_g" in filename else None
+        violation_percentage = int(filename.split("_")[4][1:]) if "_v" in filename else None
+        index = int(filename.split("_")[-1].split(".")[0])  # Extract index from filename
+    except:
+        df = pd.read_csv(dataset_path, index_col=0)
+        num_rows = len(df)
+        num_groups = df[group_column].nunique()
+        violation_percentage = "nat"
+        index = filename.split(".")[0].split("index")[1]
 
     output_csv = os.path.join(results_folder, f"greedy_{filename}_output.csv")
     # Run greedy algorithm
@@ -54,10 +62,25 @@ def process_single_dataset(dataset_path, greedy_algo_path, dp_algo_path, agg_fun
     greedy_results = run_algorithm(greedy_command, is_dp=False, timeout=timeout)
 
     # Run DP algorithm
-    dp_command = [
-        "python", dp_algo_path, agg_function.upper(), dataset_path, agg_column, group_column
-    ]
-    dp_results = run_algorithm(dp_command, is_dp=True, timeout=timeout)
+    dp_results = {'time': 'NA', 'rows_removed': 'NA'}
+    if agg_function.lower() != 'avg' and num_rows < 100000:
+        dp_command = [
+            "python", dp_algo_path, agg_function.upper(), dataset_path, agg_column,
+            group_column
+        ]
+        dp_results = run_algorithm(dp_command, is_dp=True, timeout=timeout)
+        print(dp_results)
+
+    # Run DP + pruning algorithm
+    dp_prune_results = {'time': 'NA', 'rows_removed': 'NA'}
+    if agg_function.lower() in ('sum', 'avg', 'median'):
+        dp_prune_command = [
+            "python", dp_algo_path, agg_function.upper(), dataset_path, agg_column,
+            group_column, '--prune' , str(greedy_results["rows_removed"])
+        ]
+        if agg_function.lower() == 'avg':
+            dp_prune_command.append('--mem_opt')
+        dp_prune_results = run_algorithm(dp_prune_command, is_dp=True, timeout=timeout)
 
     return {
         "dataset": filename,
@@ -69,6 +92,8 @@ def process_single_dataset(dataset_path, greedy_algo_path, dp_algo_path, agg_fun
         "greedy_rows_removed": greedy_results["rows_removed"],
         "dp_time": dp_results["time"],
         "dp_rows_removed": dp_results["rows_removed"],
+        "dp_prune_time": dp_prune_results["time"],
+        "dp_prune_rows_removed": dp_prune_results["rows_removed"],
     }
 
 
@@ -92,6 +117,28 @@ def process_datasets_parallel(dataset_folder, greedy_algo_path, dp_algo_path, ag
             except Exception as e:
                 print(f"Error processing dataset {future_to_dataset[future]}: {e}")
 
+    return pd.DataFrame(results)
+
+
+def process_datasets_serial(dataset_folder, greedy_algo_path, dp_algo_path, agg_function, timeout, results_folder, grouping_column="A", aggregation_column="B", output_folder="output"):
+    print("Collecting datasets...")
+    dataset_paths = [
+        os.path.join(dataset_folder, f) for f in os.listdir(dataset_folder) if f.endswith(".csv")
+    ]
+    results = []
+    output_path = os.path.join(output_folder, "comparison_results.csv")
+    # set the file to contain only headers.
+    headers =  ["dataset", "num_rows", "num_groups", "violation_percentage",
+                "index", "greedy_time", "greedy_rows_removed", "dp_time",
+                "dp_rows_removed", "dp_prune_time", "dp_prune_rows_removed"]
+    pd.DataFrame(columns=headers).to_csv(output_path, index=False)
+
+    print(f"Found {len(dataset_paths)} datasets. Processing serially...")
+    for path in dataset_paths:
+        result = process_single_dataset(path, greedy_algo_path, dp_algo_path, agg_function, timeout,
+                            results_folder, grouping_column, aggregation_column, output_folder)
+        pd.DataFrame([result]).to_csv(os.path.join(output_folder, "comparison_results.csv"), mode='a', index=False, header=False)
+        results.append(result)
     return pd.DataFrame(results)
 
 def plot_results(results, output_folder, x_axis, x_label, agg_function):
@@ -159,6 +206,19 @@ if __name__ == "__main__":
     timeout = args.timeout_min * 60
     grouping_column = args.grouping_column
     aggregation_column = args.aggregation_column
+
+
+    dataset_folder = args.dataset_folder
+    output_folder = results_base_folder
+    os.makedirs(output_folder, exist_ok=True)
+    results = process_datasets_serial(dataset_folder, f"aggr-main.py", "Trendline-Outlier-Detection/main.py",
+                                        agg_function, timeout=timeout, results_folder=output_folder,
+                                        grouping_column=grouping_column, aggregation_column=aggregation_column,
+                                        output_folder=output_folder)
+    results.to_csv(os.path.join(output_folder, "comparison_results.csv"), index=False)
+    sys.exit()
+
+
 
     base_folder = args.dataset_folder
     result_folder = os.path.join(results_base_folder, agg_function)

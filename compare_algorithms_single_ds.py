@@ -1,4 +1,5 @@
 import os
+import sys
 import subprocess
 import pandas as pd
 import time
@@ -11,7 +12,8 @@ def run_algorithm(command, output_file):
     start_time = time.time()
     try:
         print(f"Running command: {' '.join(command)}")
-        subprocess.run(command, stdout=subprocess.PIPE, text=True, timeout=7200)
+        #subprocess.run(command, stdout=subprocess.PIPE, text=True, timeout=7200)
+        subprocess.run(command, stdout=sys.stdout, stderr=sys.stderr, text=True, timeout=7200)
         execution_time = time.time() - start_time
 
         # Read removed tuples directly from the saved CSV file
@@ -82,6 +84,7 @@ def compare_single_dataset(dataset_path, dp_command, greedy_command, output_fold
         "greedy_removed_count": len(greedy_removed),
         "overlap_count": overlap_count
     }
+    print(results)
 
     # Save results
     os.makedirs(output_folder, exist_ok=True)
