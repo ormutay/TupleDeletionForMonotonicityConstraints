@@ -50,8 +50,7 @@ def process_single_dataset(dataset_path, greedy_algo_path, dp_algo_path, agg_fun
         num_groups = df[group_column].nunique()
         violation_percentage = "nat"
         index = filename.split(".")[0].split("index")[1]
-
-    output_csv = os.path.join(results_folder, f"greedy_{filename}_output.csv")
+    
     # Run greedy algorithm
     greedy_results = {'time': 'NA', 'rows_removed': 'NA'}
     greedy_command = [
@@ -63,6 +62,7 @@ def process_single_dataset(dataset_path, greedy_algo_path, dp_algo_path, agg_fun
     ]
     greedy_results = run_algorithm(greedy_command, is_dp=False, timeout=timeout)
 
+    
     # Run DP algorithm
     dp_results = {'time': 'NA', 'rows_removed': 'NA'}
     #if agg_function.lower() != 'avg':
@@ -71,7 +71,9 @@ def process_single_dataset(dataset_path, greedy_algo_path, dp_algo_path, agg_fun
         "python", dp_algo_path, agg_function.upper(), dataset_path, agg_column,
         group_column, "--cutoff_seconds", str(timeout), "--output_folder", output_folder,
     ]
-    dp_results = run_algorithm(dp_command, is_dp=True, timeout=timeout)
+    if agg_function.lower() == 'avg':
+        dp_command.append('--mem_opt')
+    #dp_results = run_algorithm(dp_command, is_dp=True, timeout=timeout)
     print(dp_results)
 
     # Run DP + pruning algorithm
@@ -139,18 +141,24 @@ def process_datasets_serial(dataset_folder, greedy_algo_path, dp_algo_path, agg_
     results = []
     output_path = os.path.join(output_folder, "comparison_results.csv")
     # set the file to contain only headers.
-    headers =  ["dataset", "num_rows", "num_groups", "violation_percentage",
-                "index", "greedy_time", "greedy_rows_removed", "dp_time",
-                "dp_rows_removed", "dp_prune_time", "dp_prune_rows_removed"]
-    pd.DataFrame(columns=headers).to_csv(output_path, index=False)
+    if not os.path.exists(output_path):
+        headers =  ["dataset", "num_rows", "num_groups", "violation_percentage",
+                    "index", "greedy_time", "greedy_rows_removed", "dp_time",
+                    "dp_rows_removed", "dp_prune_time", "dp_prune_rows_removed"]
+        pd.DataFrame(columns=headers).to_csv(output_path, index=False)
 
     print(f"Found {len(dataset_paths)} datasets. Processing serially...")
     dataset_paths = sorted(dataset_paths, key=fname_to_num_tuples)
     for path in dataset_paths:
-        result = process_single_dataset(path, greedy_algo_path, dp_algo_path, agg_function, timeout,
-                            results_folder, grouping_column, aggregation_column, output_folder)
-        pd.DataFrame([result]).to_csv(os.path.join(output_folder, "comparison_results.csv"), mode='a', index=False, header=False)
-        results.append(result)
+        fname = os.path.basename(path)
+        dp_prune_output_csv = os.path.join(results_folder, f"dp_prune_removed-{fname}-{agg_function.upper()}.csv")
+        if not os.path.exists(dp_prune_output_csv):
+            result = process_single_dataset(path, greedy_algo_path, dp_algo_path, agg_function, timeout,
+                                results_folder, grouping_column, aggregation_column, output_folder)
+            pd.DataFrame([result]).to_csv(output_path, mode='a', index=False, header=False)
+            results.append(result)
+        else:
+            print(f"skipped {fname}")
     return pd.DataFrame(results)
 
 def plot_results(results, output_folder, x_axis, x_label, agg_function):

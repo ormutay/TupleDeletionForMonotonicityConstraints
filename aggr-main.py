@@ -427,8 +427,8 @@ if __name__ == "__main__":
     print(f"removed {len(removed_df)} tuples. Group stats: {removed_df[args.grouping_column].value_counts()}")
 
     print("Saving results to csv...")
-    result_df.to_csv(os.path.join(args.output_folder, f"result-{csv_name}-{agg_func_name}.csv"), index=True)
-    removed_df.to_csv(os.path.join(args.output_folder, f"removed-{csv_name}-{agg_func_name}.csv"), index=True)
+    #result_df.to_csv(os.path.join(args.output_folder, f"greedy_result-{csv_name}-{agg_func_name}.csv"), index=True)
+    removed_df.to_csv(os.path.join(args.output_folder, f"greedy_removed-{csv_name}-{agg_func_name}.csv"), index=True)
 
     #print("The removed tuples are: \n", removed_df)
 
