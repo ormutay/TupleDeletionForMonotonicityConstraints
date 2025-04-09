@@ -13,6 +13,7 @@ def run_algorithm(command, is_dp=False, timeout=600):
     print(command)
     try:
         result = subprocess.run(command, stdout=subprocess.PIPE, text=True, timeout=timeout)
+        #result = subprocess.run(command, stdout=sys.stdout, stderr=sys.stderr, text=True, timeout=timeout)
         end_time = time.time()
         execution_time = end_time - start_time
 
@@ -52,6 +53,7 @@ def process_single_dataset(dataset_path, greedy_algo_path, dp_algo_path, agg_fun
 
     output_csv = os.path.join(results_folder, f"greedy_{filename}_output.csv")
     # Run greedy algorithm
+    greedy_results = {'time': 'NA', 'rows_removed': 'NA'}
     greedy_command = [
         "python", greedy_algo_path, dataset_path,
         agg_function.lower(),
@@ -63,20 +65,23 @@ def process_single_dataset(dataset_path, greedy_algo_path, dp_algo_path, agg_fun
 
     # Run DP algorithm
     dp_results = {'time': 'NA', 'rows_removed': 'NA'}
-    if agg_function.lower() != 'avg' and num_rows < 100000:
-        dp_command = [
-            "python", dp_algo_path, agg_function.upper(), dataset_path, agg_column,
-            group_column
-        ]
-        dp_results = run_algorithm(dp_command, is_dp=True, timeout=timeout)
-        print(dp_results)
+    #if agg_function.lower() != 'avg':
+    #if agg_function.lower() != 'avg' and num_rows < 100000: #limit for sum
+    dp_command = [
+        "python", dp_algo_path, agg_function.upper(), dataset_path, agg_column,
+        group_column, "--cutoff_seconds", str(timeout), "--output_folder", output_folder,
+    ]
+    dp_results = run_algorithm(dp_command, is_dp=True, timeout=timeout)
+    print(dp_results)
 
     # Run DP + pruning algorithm
     dp_prune_results = {'time': 'NA', 'rows_removed': 'NA'}
     if agg_function.lower() in ('sum', 'avg', 'median'):
         dp_prune_command = [
             "python", dp_algo_path, agg_function.upper(), dataset_path, agg_column,
-            group_column, '--prune' , str(greedy_results["rows_removed"])
+            group_column, '--prune' , str(greedy_results["rows_removed"]), 
+            "--cutoff_seconds", str(timeout),
+            "--output_folder", output_folder,
         ]
         if agg_function.lower() == 'avg':
             dp_prune_command.append('--mem_opt')
@@ -120,6 +125,12 @@ def process_datasets_parallel(dataset_folder, greedy_algo_path, dp_algo_path, ag
     return pd.DataFrame(results)
 
 
+def fname_to_num_tuples(fname):
+    if "_sample_" in fname:
+        return int(fname.split("_sample_")[1].split("_")[0])
+    else:
+        return int(fname.split("_r")[1].split("_v")[0])
+
 def process_datasets_serial(dataset_folder, greedy_algo_path, dp_algo_path, agg_function, timeout, results_folder, grouping_column="A", aggregation_column="B", output_folder="output"):
     print("Collecting datasets...")
     dataset_paths = [
@@ -134,6 +145,7 @@ def process_datasets_serial(dataset_folder, greedy_algo_path, dp_algo_path, agg_
     pd.DataFrame(columns=headers).to_csv(output_path, index=False)
 
     print(f"Found {len(dataset_paths)} datasets. Processing serially...")
+    dataset_paths = sorted(dataset_paths, key=fname_to_num_tuples)
     for path in dataset_paths:
         result = process_single_dataset(path, greedy_algo_path, dp_algo_path, agg_function, timeout,
                             results_folder, grouping_column, aggregation_column, output_folder)
