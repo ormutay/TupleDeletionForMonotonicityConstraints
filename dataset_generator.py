@@ -141,7 +141,7 @@ def generate_dataset(config, param_value, i, agg_func):
         num_groups=config.get('num_groups', param_value),
         num_rows=config.get('num_rows', param_value),
         agg_func_name=agg_func,
-        output_folder=f"final-df/dataset-{agg_func}/{config['folder']}",
+        output_folder=f"final-df-10/dataset-{agg_func}/{config['folder']}",
         index=i,
         violations_percentage=config.get('violations_percentage', param_value),
         disrupting_groups_count=3,
@@ -150,7 +150,7 @@ def generate_dataset(config, param_value, i, agg_func):
 
 
 if __name__ == "__main__":
-    num_datasets_per_setting = 3
+    num_datasets_per_setting = 10
     agg_funcs = ["sum", "max", "avg", "median"]
     configurations = [
         { # Rows

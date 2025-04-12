@@ -256,7 +256,7 @@ if __name__ == "__main__":
             print(f"No results found for {folder} datasets. Skipping plotting results...")
             continue
 
-        results.to_csv(os.path.join(output_folder, "comparison_results.csv"), index=False)
+        results.to_csv(os.path.join(output_folder, f"comparison_results-{agg_function}-{folder}.csv"), index=False)
         if folder == "rows":
             plot_results(results, output_folder, "num_rows", "Number of Rows", agg_function)
         elif folder == "groups":

@@ -68,6 +68,7 @@ def remove_outliers(df, outliers, max_removal_pct, agg_func, group_col, agg_col)
     # Take first N outliers and remove all at once
     outliers_to_remove = outliers.iloc[:max_possible_removals]
     df_after_outlier_removal = df_after_outlier_removal.drop(outliers_to_remove.index)
+    removed_outliers_df = pd.DataFrame(outliers_to_remove)
 
     # Check if monotonicity is restored
     if is_monotonic(df_after_outlier_removal, group_col=group_col, agg_col=agg_col, agg_func=agg_func):
@@ -75,14 +76,33 @@ def remove_outliers(df, outliers, max_removal_pct, agg_func, group_col, agg_col)
     else:
         print(f"Removed {len(outliers_to_remove)} outliers, still not monotonic.")
 
-    return df_after_outlier_removal, outliers_to_remove.index.tolist()
+    return df_after_outlier_removal, outliers_to_remove.index.tolist(), removed_outliers_df
 
+def remove_outliers_group_wise(df, outliers, max_removal_pct, agg_func, group_col, agg_col):
+    """Remove outliers within each group based on max_removal_pct for each group."""
+    df_after_outlier_removal = df.copy()
+    removed_outliers_df = pd.DataFrame()
 
-def save_results(df, method_name, output_folder, dataset_name, agg_func):
+    for group, group_df in df.groupby(group_col):
+        group_outliers = outliers[outliers[group_col] == group]  # Outliers only for this group
+        total_rows_in_group = len(group_df)
+        max_removals_in_group = int(total_rows_in_group * max_removal_pct / 100)
+        max_possible_removals = min(max_removals_in_group, len(group_outliers))
+
+        outliers_to_remove = group_outliers.iloc[:max_possible_removals]
+        df_after_outlier_removal = df_after_outlier_removal.drop(outliers_to_remove.index)
+        removed_outliers_df = pd.concat([removed_outliers_df, outliers_to_remove])
+
+        print(f"Removed {len(outliers_to_remove)} outliers from group {group} ({len(group_outliers)} outliers in total)")
+
+    return df_after_outlier_removal, outliers.index.tolist(), removed_outliers_df
+
+def save_results(df_after_outlier_removal, removed_ol_df, method_name, method_param, max_removal_pct, output_folder, dataset_name, agg_func, group_wise=False):
     """Save the outlier detection results to a CSV file."""
     os.makedirs(output_folder, exist_ok=True)
-    output_file = os.path.join(output_folder, f"removed_{dataset_name}_{method_name}_{agg_func}.csv")
-    df.to_csv(output_file, index=False)
+    output_file = os.path.join(output_folder, f"after_ol_{dataset_name}_{method_name}-{method_param}_pct{max_removal_pct}_{agg_func}{'_group_wise' if group_wise else ''}.csv")
+    df_after_outlier_removal.to_csv(output_file, index=False)
+    removed_ol_df.to_csv(output_file.replace("after_ol", "removed_ol"), index=False)
     print(f"Outlier removal results saved to {output_file}")
 
 # Any value too far from the mean (in terms of standard deviations) is considered an outlier.
@@ -96,7 +116,7 @@ def z_score_outliers(df, column, threshold):
 # Adjust neighbors: Increase → More robust but may miss some outliers, Decrease → More local and sensitive to small change.
 def knn_outliers(df, column, neighbors):
     """Detect outliers using k-Nearest Neighbors (kNN) based method with configurable neighbors."""
-    lof = LocalOutlierFactor(n_neighbors=neighbors)
+    lof = LocalOutlierFactor(n_neighbors=neighbors, n_jobs=-1) # n_jobs=-1 to use all CPU cores
     outliers = lof.fit_predict(df[[column]])
     return df[outliers == -1]
 
@@ -108,6 +128,18 @@ def isolation_forest_outliers(df, column, contamination):
     predictions = iso_forest.fit_predict(df[[column]])
     return df[predictions == -1]
 
+def detect_outliers(df, method, column, param, group_col=None):
+    """Generic outlier detection method that supports both modes."""
+    if group_col:
+        # Group-wise mode: Detect outliers within each group
+        outliers = pd.DataFrame()
+        for group, group_df in df.groupby(group_col):
+            group_outliers = method(group_df, column)
+            outliers = pd.concat([outliers, group_outliers])
+        return outliers
+    else:
+        # Standard mode: Detect outliers across the whole dataset
+        return method(df, column)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Outlier Detection Methods")
@@ -120,6 +152,7 @@ if __name__ == "__main__":
     parser.add_argument("--output_folder", type=str, default="outlier_results", help="Output folder")
     parser.add_argument("--method", type=str, help="Outlier detection method", choices=["z_score", "knn", "isolation_forest"])
     parser.add_argument("--param", type=float, help="Method parameter")
+    parser.add_argument("--group_wise", action='store_true', help="Enable group-wise outlier detection mode")
 
     args = parser.parse_args()
 
@@ -132,7 +165,7 @@ if __name__ == "__main__":
           f"{BLUE_BOLD}method parameter:{RESET} {BOLD}{method_param}{RESET}")
 
     df = load_dataset(args.dataset_path)
-    df = df.dropna() #does not modify the original dataframe
+
     #todo delete this is just for testing
     #df = df.sample(n=500000, random_state=42)
     dataset_name = os.path.basename(args.dataset_path).replace(".csv", "")
@@ -145,10 +178,17 @@ if __name__ == "__main__":
 
     start_time = time.time()
     method = methods[method_name]
-    outliers = method(df, args.agg_col)
+    outliers = detect_outliers(df, method, args.agg_col, method_param, args.group_col if args.group_wise else None)
     print(f"Detected {len(outliers)} outliers")
-    df_after_outlier_removal, removed_rows = remove_outliers(df, outliers, args.max_removal_pct,
-                                                             args.agg_func, args.group_col, args.agg_col)
-    save_results(df_after_outlier_removal, method_name, args.output_folder, dataset_name, args.agg_func)
+    if args.group_wise:
+        num_groups = df[args.group_col].nunique()
+        group_max_removal_pct = args.max_removal_pct / num_groups
+        df_after_outlier_removal, removed_rows, removed_ol_df = remove_outliers_group_wise(df, outliers, group_max_removal_pct,
+                                                                            args.agg_func, args.group_col, args.agg_col)
+    else:
+        df_after_outlier_removal, removed_rows, removed_ol_df = remove_outliers(df, outliers, args.max_removal_pct,
+                                                                 args.agg_func, args.group_col, args.agg_col)
+
+    save_results(df_after_outlier_removal, removed_ol_df, method_name, method_param, args.max_removal_pct, args.output_folder, dataset_name, args.agg_func, args.group_wise)
     #todo: save in to a log/file
     print(f"Method: {method_name}, Removed rows: {len(removed_rows)}, Time: {time.time() - start_time:.4f} sec")
