@@ -4,9 +4,7 @@ import os
 import time
 import argparse
 from tqdm import tqdm
-import matplotlib.pyplot as plt
-from matplotlib_venn import venn2
-import concurrent.futures
+from collections import Counter
 
 DEBUG = False
 
@@ -101,7 +99,7 @@ def run_outlier_methods(dataset_path, agg_func, grouping_col, agg_col, output_fo
     max_removal_pcts = [100]
 
     z_score_values = [1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 5.0, 6.0]
-    knn_neighbors_values = [3, 5, 8, 10]
+    # knn_neighbors_values = [3, 5, 8, 10]
     isolation_contamination_values = [0.001 ,0.005 ,0.01, 0.05, 0.1, 0.2]
 
     for group_wise in [False, True]:
@@ -112,10 +110,10 @@ def run_outlier_methods(dataset_path, agg_func, grouping_col, agg_col, output_fo
                                 param, max_removal_pct, group_wise)
 
         # knn
-        for param in tqdm(knn_neighbors_values, desc="knn"):
-            for max_removal_pct in max_removal_pcts:
-                run_combination(dataset_path, agg_func, grouping_col, agg_col, output_folder, results, "knn",
-                                param, max_removal_pct, group_wise)
+        # for param in tqdm(knn_neighbors_values, desc="knn"):
+        #     for max_removal_pct in max_removal_pcts:
+        #         run_combination(dataset_path, agg_func, grouping_col, agg_col, output_folder, results, "knn",
+        #                         param, max_removal_pct, group_wise)
 
         # isolation_forest
         for param in tqdm(isolation_contamination_values, desc="isolation_forest"):
@@ -161,10 +159,16 @@ def compare_removed_rows_overlap(dataset_path, agg_func, grouping_col, agg_col, 
         print(f"Warning: Could not find greedy removed rows file at {greedy_removed_path}")
         return None
 
+    original_greedy_time = None
+    for _, row in outlier_results_df.iterrows():
+        if row['dataset'] == dataset_path:
+            original_greedy_time = row['greedy_time']
+            break
+
     # Create a unique identifier for each row based on grouping_col and agg_col
     greedy_removed_df['row_identifier'] = greedy_removed_df[grouping_col].astype(str) + '_' + greedy_removed_df[
         agg_col].astype(str)
-    greedy_removed_set = set(greedy_removed_df['row_identifier'])
+    greedy_identifier_counts = Counter(greedy_removed_df['row_identifier'])
 
     overlap_results = []
 
@@ -173,6 +177,10 @@ def compare_removed_rows_overlap(dataset_path, agg_func, grouping_col, agg_col, 
         method = row['method']
         param = row['param']
         group_wise = row['group_wise']
+        outlier_time = row['outlier_time']
+        greedy_time_after_ol = row['greedy_time']
+        outlier_rows_removed = row['outlier_rows_removed']
+        greedy_rows_removed_after_ol = row['greedy_rows_removed']
 
         # Path to the removed rows file for this outlier detection method
         method_param_str = f"{method}-{param}"
@@ -190,11 +198,12 @@ def compare_removed_rows_overlap(dataset_path, agg_func, grouping_col, agg_col, 
             # Create identifier for outlier removed rows
             ol_removed_df['row_identifier'] = ol_removed_df[grouping_col].astype(str) + '_' + ol_removed_df[
                 agg_col].astype(str)
-            ol_removed_set = set(ol_removed_df['row_identifier'])
+            ol_identifier_counts = Counter(ol_removed_df['row_identifier'])
 
             # Calculate overlap
-            overlap_set = greedy_removed_set.intersection(ol_removed_set)
-            overlap_count = len(overlap_set)
+            common_identifiers = set(greedy_identifier_counts.keys()) & set(ol_identifier_counts.keys())
+            overlap_count = sum(min(greedy_identifier_counts[id], ol_identifier_counts[id])
+                                for id in common_identifiers)
 
             # Calculate overlap percentage
             if greedy_removed_count > 0 and ol_removed_count > 0:
@@ -204,16 +213,31 @@ def compare_removed_rows_overlap(dataset_path, agg_func, grouping_col, agg_col, 
                 overlap_pct_of_greedy = 0
                 overlap_pct_of_ol = 0
 
+            # Total rows removed by the combined approach
+            ol_total_rows_removed = outlier_rows_removed + greedy_rows_removed_after_ol
+
+            # Calculate runtime metrics
+            total_runtime = outlier_time + greedy_time_after_ol
+            runtime_improvement = original_greedy_time / total_runtime if total_runtime > 0 else float('inf')
+
+
             # Add result to collection
             overlap_results.append({
                 'method': method,
                 'param': param,
                 'group_wise': group_wise,
+                'ol_removed_count(not including greedy)': ol_removed_count,
+                'greedy_rows_removed_after_ol': greedy_rows_removed_after_ol,
+                'ol_total_rows_removed': ol_total_rows_removed,
                 'greedy_removed_count': greedy_removed_count,
-                'ol_removed_count': ol_removed_count,
-                'overlap_count': overlap_count,
-                'overlap_pct_of_greedy': overlap_pct_of_greedy,
-                'overlap_pct_of_ol': overlap_pct_of_ol
+                'overlap_count(greed vs ol alon)': overlap_count,
+                'overlap_pct_of_greedy': f"{overlap_pct_of_greedy:4f}",
+                'overlap_pct_of_ol': f"{overlap_pct_of_ol:4f}",
+                'outlier_runtime (not including greedy)': f"{outlier_time:4f}",
+                'greedy_after_ol_runtime': f"{greedy_time_after_ol:4f}",
+                'ol_total_runtime': f"{total_runtime:4f}",
+                'greedy_runtime': f"{original_greedy_time:4f}",
+                'runtime_improvement': f"{runtime_improvement:4f}",
             })
 
             print(f"Method: {method}, Param: {param}, Group-wise: {group_wise}")
@@ -237,84 +261,6 @@ def compare_removed_rows_overlap(dataset_path, agg_func, grouping_col, agg_col, 
     else:
         print("No overlap results generated.")
         return None
-
-
-def create_overlap_visualization(overlap_df, dataset_name, agg_func, output_folder):
-    """
-    Create visualizations for the overlap analysis
-
-    Args:
-        overlap_df (pd.DataFrame): DataFrame with overlap statistics
-        dataset_name (str): Name of the dataset
-        agg_func (str): Aggregation function used
-        output_folder (str): Folder for output files
-    """
-    # Create plots directory
-    plots_dir = os.path.join(output_folder, "plots")
-    os.makedirs(plots_dir, exist_ok=True)
-
-    # Group results by method
-    for method in overlap_df['method'].unique():
-        method_df = overlap_df[overlap_df['method'] == method]
-
-        # Create separate plots for group_wise = True and False
-        for group_wise in [True, False]:
-            method_group_df = method_df[method_df['group_wise'] == group_wise]
-
-            if len(method_group_df) == 0:
-                continue
-
-            group_label = "group-wise" if group_wise else "standard"
-
-            # Plot the overlap percentage by parameter
-            plt.figure(figsize=(10, 6))
-            plt.bar(method_group_df['param'].astype(str),
-                    method_group_df['overlap_pct_of_greedy'],
-                    color='blue',
-                    alpha=0.6,
-                    label='% of Greedy Rows')
-            plt.bar(method_group_df['param'].astype(str),
-                    method_group_df['overlap_pct_of_ol'],
-                    color='orange',
-                    alpha=0.6,
-                    label='% of Outlier Rows')
-
-            plt.xlabel('Parameter Value')
-            plt.ylabel('Overlap Percentage')
-            plt.title(f'Overlap Percentage: {method} ({group_label}) - {dataset_name} - {agg_func}')
-            plt.legend()
-            plt.grid(True, linestyle='--', alpha=0.7)
-            plt.tight_layout()
-
-            # Save the plot
-            plot_path = os.path.join(plots_dir, f"overlap_{method}_{group_label}_{dataset_name}_{agg_func}.png")
-            plt.savefig(plot_path)
-            plt.close()
-
-            # Create Venn diagrams for each parameter
-            for _, row in method_group_df.iterrows():
-                param = row['param']
-                greedy_count = row['greedy_removed_count']
-                ol_count = row['ol_removed_count']
-                overlap_count = row['overlap_count']
-
-                # Calculate non-overlapping areas
-                greedy_only = greedy_count - overlap_count
-                ol_only = ol_count - overlap_count
-
-                plt.figure(figsize=(8, 6))
-                venn2(subsets=(greedy_only, ol_only, overlap_count),
-                      set_labels=('Greedy', f'{method} (param={param})'))
-
-                plt.title(f'Removed Rows Overlap: {method} (param={param}, {group_label})\n{dataset_name} - {agg_func}')
-
-                # Save the plot
-                venn_path = os.path.join(plots_dir,
-                                         f"venn_{method}_param{param}_{group_label}_{dataset_name}_{agg_func}.png")
-                plt.savefig(venn_path)
-                plt.close()
-
-    print(f"Visualizations saved to {plots_dir}")
 
 
 if __name__ == "__main__":
