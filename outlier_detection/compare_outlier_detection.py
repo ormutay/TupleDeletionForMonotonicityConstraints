@@ -99,7 +99,7 @@ def run_outlier_methods(dataset_path, agg_func, grouping_col, agg_col, output_fo
     max_removal_pcts = [100]
 
     z_score_values = [1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 5.0, 6.0]
-    # knn_neighbors_values = [3, 5, 8, 10]
+    knn_neighbors_values = [3, 5, 8, 10]
     isolation_contamination_values = [0.001 ,0.005 ,0.01, 0.05, 0.1, 0.2]
 
     for group_wise in [False, True]:
@@ -110,10 +110,10 @@ def run_outlier_methods(dataset_path, agg_func, grouping_col, agg_col, output_fo
                                 param, max_removal_pct, group_wise)
 
         # knn
-        # for param in tqdm(knn_neighbors_values, desc="knn"):
-        #     for max_removal_pct in max_removal_pcts:
-        #         run_combination(dataset_path, agg_func, grouping_col, agg_col, output_folder, results, "knn",
-        #                         param, max_removal_pct, group_wise)
+        for param in tqdm(knn_neighbors_values, desc="knn"):
+            for max_removal_pct in max_removal_pcts:
+                run_combination(dataset_path, agg_func, grouping_col, agg_col, output_folder, results, "knn",
+                                param, max_removal_pct, group_wise)
 
         # isolation_forest
         for param in tqdm(isolation_contamination_values, desc="isolation_forest"):
@@ -183,6 +183,8 @@ def compare_removed_rows_overlap(dataset_path, agg_func, grouping_col, agg_col, 
         greedy_rows_removed_after_ol = row['greedy_rows_removed']
 
         # Path to the removed rows file for this outlier detection method
+        if method == "knn":
+            param = int(param)
         method_param_str = f"{method}-{param}"
         group_wise_str = "_group_wise" if group_wise else ""
 
@@ -217,8 +219,8 @@ def compare_removed_rows_overlap(dataset_path, agg_func, grouping_col, agg_col, 
             ol_total_rows_removed = outlier_rows_removed + greedy_rows_removed_after_ol
 
             # Calculate runtime metrics
-            total_runtime = outlier_time + greedy_time_after_ol
-            runtime_improvement = original_greedy_time / total_runtime if total_runtime > 0 else float('inf')
+            total_ol_runtime = outlier_time + greedy_time_after_ol
+            runtime_improvement = original_greedy_time / total_ol_runtime if total_ol_runtime > 0 else float('inf')
 
 
             # Add result to collection
@@ -230,12 +232,12 @@ def compare_removed_rows_overlap(dataset_path, agg_func, grouping_col, agg_col, 
                 'greedy_rows_removed_after_ol': greedy_rows_removed_after_ol,
                 'ol_total_rows_removed': ol_total_rows_removed,
                 'greedy_removed_count': greedy_removed_count,
-                'overlap_count(greed vs ol alon)': overlap_count,
+                'overlap_count(greedy vs ol alone)': overlap_count,
                 'overlap_pct_of_greedy': f"{overlap_pct_of_greedy:4f}",
                 'overlap_pct_of_ol': f"{overlap_pct_of_ol:4f}",
                 'outlier_runtime (not including greedy)': f"{outlier_time:4f}",
                 'greedy_after_ol_runtime': f"{greedy_time_after_ol:4f}",
-                'ol_total_runtime': f"{total_runtime:4f}",
+                'ol_total_runtime': f"{total_ol_runtime:4f}",
                 'greedy_runtime': f"{original_greedy_time:4f}",
                 'runtime_improvement': f"{runtime_improvement:4f}",
             })
