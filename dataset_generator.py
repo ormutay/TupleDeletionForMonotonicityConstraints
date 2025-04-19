@@ -60,7 +60,9 @@ def create_dataset(
         for i in range(len(temp_group_agg) - 1)
     ), "re-ordered dataset is not monotonic."
 
-    violation_groups = random.sample(list(group_mapping.values()), disrupting_groups_count)
+    group_ids = sorted(list(group_mapping.values()))
+    # avoid selecting the last (rightmost) group, since increasing its aggregation value will not create a violation.
+    violation_groups = random.sample(group_ids[:-1], disrupting_groups_count)
     violation_data = []
     # Evenly distribute violation rows across the selected groups
     rows_per_group = violation_rows // len(violation_groups)
@@ -87,7 +89,7 @@ def create_dataset(
     dataset_filename = os.path.join(datasets_output_folder, f"dataset_{name_suffix}_{index}.csv")
     df.to_csv(dataset_filename, index=False)
     print(f"Dataset saved to {dataset_filename}")
-    plot_dataset(df, group_agg, agg_func_name, output_folder, index, name_suffix)
+   # plot_dataset(df, group_agg, agg_func_name, output_folder, index, name_suffix)
 
     # temp_group_agg = df.groupby("A")["B"].agg(agg_func).reset_index()
     # print("Aggregates after adding violations:")
@@ -141,7 +143,7 @@ def generate_dataset(config, param_value, i, agg_func):
         num_groups=config.get('num_groups', param_value),
         num_rows=config.get('num_rows', param_value),
         agg_func_name=agg_func,
-        output_folder=f"final-df-10/dataset-{agg_func}/{config['folder']}",
+        output_folder=f"synthetic/dataset-{agg_func}/{config['folder']}",
         index=i,
         violations_percentage=config.get('violations_percentage', param_value),
         disrupting_groups_count=3,
@@ -150,11 +152,11 @@ def generate_dataset(config, param_value, i, agg_func):
 
 
 if __name__ == "__main__":
-    num_datasets_per_setting = 10
+    num_datasets_per_setting = 3
     agg_funcs = ["sum", "max", "avg", "median"]
     configurations = [
         { # Rows
-            'range': range(100, 1100, 100),
+            'range': range(100000, 1000001, 100000),
             'folder': 'rows',
             'agg_funcs': agg_funcs,
             'num_groups': 10,
@@ -164,7 +166,7 @@ if __name__ == "__main__":
             'range': range(5, 55, 5),
             'folder': 'groups',
             'agg_funcs': agg_funcs,
-            'num_rows': 1000,
+            'num_rows': 1000000,
             'violations_percentage': 10,
         },
         { # Violations
@@ -172,7 +174,7 @@ if __name__ == "__main__":
             'folder': 'violations',
             'agg_funcs': agg_funcs,
             'num_groups': 10,
-            'num_rows': 1000,
+            'num_rows': 1000000,
         }
     ]
 
