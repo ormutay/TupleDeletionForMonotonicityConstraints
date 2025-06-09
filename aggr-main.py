@@ -417,7 +417,10 @@ if __name__ == "__main__":
 
     print(f"\033[1mProcessing file: {csv_name} with aggregation function: {agg_func_name}\033[0m")
 
-    df = pd.read_csv(args.csv_file)[[args.grouping_column, args.aggregation_column]].copy()
+    #df = pd.read_csv(args.csv_file)[[args.grouping_column, args.aggregation_column]].copy()
+    df = pd.read_csv(args.csv_file)
+    print("Before repair:")
+    print(df.groupby(args.grouping_column)[args.aggregation_column].agg(pandas_agg_func))
 
     start = time.time()
     output_csv = os.path.join(args.output_folder, f"logs-{csv_name}-{agg_func_name}.csv")
@@ -431,6 +434,8 @@ if __name__ == "__main__":
     removed_df.to_csv(os.path.join(args.output_folder, f"greedy_removed-{csv_name}-{agg_func_name}.csv"), index=True)
 
     #print("The removed tuples are: \n", removed_df)
+    print("After repair:")
+    print(result_df.groupby(args.grouping_column)[args.aggregation_column].agg(pandas_agg_func))
 
     if PLOT:
         print("Plotting results...")
