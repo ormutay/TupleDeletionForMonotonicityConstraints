@@ -51,6 +51,13 @@ def process_single_dataset(dataset_path, greedy_algo_path, dp_algo_path, agg_fun
         violation_percentage = "nat"
         index = filename.split(".")[0].split("index")[1]
     
+    result_summary = {
+        "dataset": filename,
+        "num_rows": num_rows,
+        "num_groups": num_groups,
+        "violation_percentage": violation_percentage,
+        "index": index,}
+
     # Run greedy algorithm
     greedy_results = {'time': 'NA', 'rows_removed': 'NA'}
     greedy_command = [
@@ -61,47 +68,79 @@ def process_single_dataset(dataset_path, greedy_algo_path, dp_algo_path, agg_fun
         "--output_folder", output_folder,
     ]
     greedy_results = run_algorithm(greedy_command, is_dp=False, timeout=timeout)
-
+    result_summary['greedy_time'] = greedy_results['time']
+    result_summary['greedy_rows_removed'] = greedy_results['rows_removed']
+    greedy_prune = str(greedy_results["rows_removed"])
     
-    # Run DP algorithm
-    dp_results = {'time': 'NA', 'rows_removed': 'NA'}
     #if agg_function.lower() != 'avg':
     #if agg_function.lower() != 'avg' and num_rows < 100000: #limit for sum
     dp_command = [
         "python", dp_algo_path, agg_function.upper(), dataset_path, agg_column,
         group_column, "--cutoff_seconds", str(timeout), "--output_folder", output_folder,
     ]
-    if agg_function.lower() == 'avg':
-        dp_command.append('--mem_opt')
-    #dp_results = run_algorithm(dp_command, is_dp=True, timeout=timeout)
+    dp_command.append('--mem_opt')
+    #dp_command.extend(['--prune_aggpack_by_greedy', greedy_prune])
+    #dp_command.append('--agg_pack_opt')
+    # Naive DP (no pruning)
+    # Run DP algorithm
+    dp_results = {'time': 'NA', 'rows_removed': 'NA'}
+
     print(dp_results)
+    result_summary['naive_dp_time'] = dp_results['time']
+    result_summary['naive_dp_rows_removed'] = dp_results['rows_removed']
+
+    # DP with greedy pruning
+    dp1_results = {'time': 'NA', 'rows_removed': 'NA'}
+    #if num_rows < 100000:
+    #dp1_results = run_algorithm(dp_command + ['--prune_dp_by_greedy', greedy_prune], is_dp=True, timeout=timeout)
+    print(dp1_results)
+    result_summary['dp_greedy_prune_time'] = dp1_results['time']
+    result_summary['dp_greedy_prune_rows_removed'] = dp1_results['rows_removed']
+
+    # DP with H pruning
+    dp2_results = {'time': 'NA', 'rows_removed': 'NA'}
+    #if num_rows < 100000:
+    #dp2_results = run_algorithm(dp_command + ['--prune_h'], is_dp=True, timeout=timeout)
+    print(dp2_results)
+    result_summary['dp_hprune_time'] = dp2_results['time']
+    result_summary['dp_hprune_rows_removed'] = dp2_results['rows_removed']
+    
+    # DP with H pruning + greedy pruning 
+    dp3_results = {'time': 'NA', 'rows_removed': 'NA'}
+    #if num_rows < 100000:
+    dp3_results = run_algorithm(dp_command + ['--prune_h', '--prune_dp_by_greedy', greedy_prune], is_dp=True, timeout=timeout)
+    print(dp3_results)
+    result_summary['dp_greedy+hprune_time'] = dp3_results['time']
+    result_summary['dp_greedy+hprune_rows_removed'] = dp3_results['rows_removed']
 
     # Run DP + pruning algorithm
-    dp_prune_results = {'time': 'NA', 'rows_removed': 'NA'}
-    if agg_function.lower() in ('sum', 'avg', 'median'):
-        dp_prune_command = [
-            "python", dp_algo_path, agg_function.upper(), dataset_path, agg_column,
-            group_column, '--prune' , str(greedy_results["rows_removed"]), 
-            "--cutoff_seconds", str(timeout),
-            "--output_folder", output_folder,
-        ]
-        if agg_function.lower() == 'avg':
-            dp_prune_command.append('--mem_opt')
-        dp_prune_results = run_algorithm(dp_prune_command, is_dp=True, timeout=timeout)
+    #dp_prune_results = {'time': 'NA', 'rows_removed': 'NA'}
+    #if agg_function.lower() in ('avg', 'median'):
+    #    dp_prune_command = [
+    #        "python", dp_algo_path, agg_function.upper(), dataset_path, agg_column,
+    #        group_column, '--prune' , str(greedy_results["rows_removed"]), 
+    #        "--cutoff_seconds", str(timeout),
+    #        "--output_folder", output_folder,
+    #    ]
+    #    if agg_function.lower() in ('avg', 'median'):
+    #        dp_prune_command.append('--mem_opt')
+    #    dp_prune_results = run_algorithm(dp_prune_command, is_dp=True, timeout=timeout)
 
-    return {
-        "dataset": filename,
-        "num_rows": num_rows,
-        "num_groups": num_groups,
-        "violation_percentage": violation_percentage,
-        "index": index,
-        "greedy_time": greedy_results["time"],
-        "greedy_rows_removed": greedy_results["rows_removed"],
-        "dp_time": dp_results["time"],
-        "dp_rows_removed": dp_results["rows_removed"],
-        "dp_prune_time": dp_prune_results["time"],
-        "dp_prune_rows_removed": dp_prune_results["rows_removed"],
-    }
+    #return {
+    #    "dataset": filename,
+    #    "num_rows": num_rows,
+    #    "num_groups": num_groups,
+    #    "violation_percentage": violation_percentage,
+    #    "index": index,
+    #    "greedy_time": greedy_results["time"],
+    #    "greedy_rows_removed": greedy_results["rows_removed"],
+    #    "dp_time": dp_results["time"],
+    #    "dp_rows_removed": dp_results["rows_removed"],
+    #    "dp_prune_time": dp_prune_results["time"],
+    #    "dp_prune_rows_removed": dp_prune_results["rows_removed"],
+    #}
+    
+    return result_summary
 
 
 def process_datasets_parallel(dataset_folder, greedy_algo_path, dp_algo_path, agg_function, timeout, results_folder, grouping_column="A", aggregation_column="B", output_folder="output"):
@@ -133,32 +172,36 @@ def fname_to_num_tuples(fname):
     else:
         return int(fname.split("_r")[1].split("_v")[0])
 
+
 def process_datasets_serial(dataset_folder, greedy_algo_path, dp_algo_path, agg_function, timeout, results_folder, grouping_column="A", aggregation_column="B", output_folder="output"):
     print("Collecting datasets...")
     dataset_paths = [
         os.path.join(dataset_folder, f) for f in os.listdir(dataset_folder) if f.endswith(".csv")
     ]
     results = []
-    output_path = os.path.join(output_folder, "comparison_results.csv")
+    output_path = os.path.join(output_folder, "comparison_results_dp_variations.csv")
     # set the file to contain only headers.
-    if not os.path.exists(output_path):
-        headers =  ["dataset", "num_rows", "num_groups", "violation_percentage",
-                    "index", "greedy_time", "greedy_rows_removed", "dp_time",
-                    "dp_rows_removed", "dp_prune_time", "dp_prune_rows_removed"]
-        pd.DataFrame(columns=headers).to_csv(output_path, index=False)
+    #if not os.path.exists(output_path):
+    #    headers =  ["dataset", "num_rows", "num_groups", "violation_percentage",
+    #                "index", "greedy_time", "greedy_rows_removed", "dp_time",
+    #                "dp_rows_removed", "dp_prune_time", "dp_prune_rows_removed"]
+    #    pd.DataFrame(columns=headers).to_csv(output_path, index=False)
 
     print(f"Found {len(dataset_paths)} datasets. Processing serially...")
     dataset_paths = sorted(dataset_paths, key=fname_to_num_tuples)
     for path in dataset_paths:
         fname = os.path.basename(path)
-        dp_prune_output_csv = os.path.join(results_folder, f"dp_prune_removed-{fname}-{agg_function.upper()}.csv")
-        if not os.path.exists(dp_prune_output_csv):
-            result = process_single_dataset(path, greedy_algo_path, dp_algo_path, agg_function, timeout,
-                                results_folder, grouping_column, aggregation_column, output_folder)
-            pd.DataFrame([result]).to_csv(output_path, mode='a', index=False, header=False)
-            results.append(result)
-        else:
-            print(f"skipped {fname}")
+        #dp_prune_output_csv = os.path.join(results_folder, f"dp_prune_removed-{fname}-{agg_function.upper()}.csv")
+        #if not os.path.exists(dp_prune_output_csv):
+        result = process_single_dataset(path, greedy_algo_path, dp_algo_path, agg_function, timeout,
+                            results_folder, grouping_column, aggregation_column, output_folder)
+        if not os.path.exists(output_path):
+            headers = sorted(result.keys())
+            pd.DataFrame(columns=headers).to_csv(output_path, index=False)
+        pd.DataFrame([result], columns=headers).to_csv(output_path, mode='a', index=False, header=False)
+        results.append(result)
+        #else:
+        #    print(f"skipped {fname}")
     return pd.DataFrame(results)
 
 def plot_results(results, output_folder, x_axis, x_label, agg_function):
@@ -235,7 +278,7 @@ if __name__ == "__main__":
                                         agg_function, timeout=timeout, results_folder=output_folder,
                                         grouping_column=grouping_column, aggregation_column=aggregation_column,
                                         output_folder=output_folder)
-    results.to_csv(os.path.join(output_folder, "comparison_results.csv"), index=False)
+    #results.to_csv(os.path.join(output_folder, "comparison_results.csv"), index=False)
     sys.exit()
 
 
