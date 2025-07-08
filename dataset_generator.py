@@ -3,6 +3,67 @@ import random
 import matplotlib.pyplot as plt
 import os
 import concurrent.futures
+import sys
+
+
+def create_dataset_simple(num_rows, index, output_folder, violation_percent=None):
+    num_groups = 10
+    disrupting_groups_count = 4
+    if violation_percent is None:
+        violation_percent = 0.01 # 1% violation
+    violation_rows = int(num_rows * violation_percent)
+    regular_rows = num_rows - violation_rows
+    groups = [i % num_groups + 1 for i in range(regular_rows)]
+    B_values = [random.randint(1, 100) for _ in range(regular_rows)]
+    df = pd.DataFrame({"A": groups, "B": B_values})
+
+
+    group_ids = range(1, num_groups)
+    # avoid selecting the last (rightmost) group, since increasing its aggregation value will not create a violation.
+    violation_groups = random.sample(group_ids[:-1], disrupting_groups_count)
+    violation_data = []
+    # Evenly distribute violation rows across the selected groups
+    rows_per_group = violation_rows // len(violation_groups)
+    remaining_rows = violation_rows % len(violation_groups)
+
+    for group in violation_groups:
+        for _ in range(rows_per_group):
+            value = random.randint(100, 120)
+            violation_data.append({"A": group, "B": value})
+
+    # Distribute remaining rows to random groups
+    for _ in range(remaining_rows):
+        group = random.choice(violation_groups)
+        value = random.randint(100, 120)
+        violation_data.append({"A": group, "B": value})
+
+    # Convert the violations into a DataFrame and add to the dataset
+    violation_df = pd.DataFrame(violation_data)
+    df = pd.concat([df, violation_df], ignore_index=True)
+
+    for agg_func in {'max', 'sum', 'median', 'mean', 'count', 'nunique'}:
+        print(agg_func)
+        agg_values = df.groupby('A')['B'].agg(agg_func)
+        # Step 2: Sort by index or value as needed (default is index order)
+        agg_values_sorted = agg_values.sort_index()
+        # Step 3: Compare each value with the next one
+        comparison = agg_values_sorted.values[:-1] > agg_values_sorted.values[1:]
+        # Step 4: Count how many times there is a violation
+        count = comparison.sum()
+        print(f"count of violations: {count}")
+        diffs = agg_values_sorted.values[1:] - agg_values_sorted.values[:-1]
+        positive_diffs = diffs[diffs > 0]
+        print(f"sum of violations: {sum(positive_diffs)}")
+
+
+    datasets_output_folder = os.path.join(output_folder, "datasets_r100K")
+    os.makedirs(datasets_output_folder, exist_ok=True)
+    dataset_filename = os.path.join(datasets_output_folder, f"dataset_generic_g10_r{num_rows}_v{int(violation_percent*100)}_{index}.csv")
+    df.to_csv(dataset_filename, index=False)
+    print(f"Dataset saved to {dataset_filename}")
+
+
+
 
 def create_dataset(
         num_groups, num_rows, agg_func_name, output_folder="dataset",
@@ -153,6 +214,15 @@ def generate_dataset(config, param_value, i, agg_func):
 
 if __name__ == "__main__":
     num_datasets_per_setting = 3
+
+    #for num_rows in range(200000, 1000001, 200000):
+    for num_rows in [100000]:
+        for violation in [0.01, 0.05, 0.1, 0.15]:
+            for i in range(num_datasets_per_setting):
+                create_dataset_simple(num_rows, i, output_folder="synthetic/dataset-generic/", violation_percent=violation)
+    sys.exit()
+
+
     agg_funcs = ["sum", "max", "avg", "median"]
     configurations = [
         { # Rows

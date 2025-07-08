@@ -37,7 +37,7 @@ def run_algorithm(command, is_dp=False, timeout=600):
 
 
 # Helper function to process a single dataset
-def process_single_dataset(dataset_path, greedy_algo_path, dp_algo_path, agg_function, timeout, results_folder, group_column, agg_column, output_folder, dp_variations=False, aggpack_variations=True, deduce_setting_from_agg=False):
+def process_single_dataset(dataset_path, greedy_algo_path, dp_algo_path, agg_function, timeout, results_folder, group_column, agg_column, output_folder, dp_variations=True, aggpack_variations=False, deduce_setting_from_agg=False):
     print(f"Processing dataset: {dataset_path}")
     filename = os.path.basename(dataset_path)
 
@@ -71,10 +71,13 @@ def process_single_dataset(dataset_path, greedy_algo_path, dp_algo_path, agg_fun
         "--aggregation_column", agg_column,
         "--output_folder", output_folder,
     ]
-    greedy_results = run_algorithm(greedy_command, is_dp=False, timeout=timeout)
-    result_summary['greedy_time'] = greedy_results['time']
-    result_summary['greedy_rows_removed'] = greedy_results['rows_removed']
-    greedy_prune = str(greedy_results["rows_removed"])
+    if agg_function.lower() in ['avg', 'sum', 'median', 'max']:
+        greedy_results = run_algorithm(greedy_command, is_dp=False, timeout=timeout)
+        result_summary['greedy_time'] = greedy_results['time']
+        result_summary['greedy_rows_removed'] = greedy_results['rows_removed']
+        greedy_prune = str(greedy_results["rows_removed"])
+    else:
+        greedy_prune = None
 
     dp_command = [
         "python", dp_algo_path, agg_function.upper(), dataset_path, agg_column,
@@ -101,7 +104,7 @@ def process_single_dataset(dataset_path, greedy_algo_path, dp_algo_path, agg_fun
         dp_command.extend(['--prune_aggpack_by_greedy', greedy_prune])  # available for sum, avg and median only
     if optimize_aggpack:
         dp_command.append('--agg_pack_opt')  # available for sum, median, and avg but for sum does not work with pruning by greedy
-    dp_command.append('--prune_h')
+    #dp_command.append('--prune_h')
     #dp_variations = False
     #aggpack_variations = True
     skip_until = 0
@@ -109,7 +112,7 @@ def process_single_dataset(dataset_path, greedy_algo_path, dp_algo_path, agg_fun
     if dp_variations or aggpack_variations or deduce_setting_from_agg:
         # Naive DP (no pruning)
         dp_results = {'time': 'NA', 'rows_removed': 'NA', 'mem_usage': 'NA'}
-        #dp_results = run_algorithm(dp_command, is_dp=True, timeout=timeout)
+        dp_results = run_algorithm(dp_command, is_dp=True, timeout=timeout)
         print(dp_results)
         result_summary['naive_dp_time'] = dp_results['time']
         result_summary['naive_dp_rows_removed'] = dp_results['rows_removed']
@@ -118,7 +121,8 @@ def process_single_dataset(dataset_path, greedy_algo_path, dp_algo_path, agg_fun
     if dp_variations:
         # DP with greedy pruning
         dp1_results = {'time': 'NA', 'rows_removed': 'NA', 'mem_usage': 'NA'}
-        #dp1_results = run_algorithm(dp_command + ['--prune_dp_by_greedy', greedy_prune], is_dp=True, timeout=timeout)
+        #if num_rows >= skip_until:
+        dp1_results = run_algorithm(dp_command + ['--prune_dp_by_greedy', greedy_prune], is_dp=True, timeout=timeout)
         print(dp1_results)
         result_summary['dp_greedy_prune_time'] = dp1_results['time']
         result_summary['dp_greedy_prune_rows_removed'] = dp1_results['rows_removed']
@@ -134,7 +138,7 @@ def process_single_dataset(dataset_path, greedy_algo_path, dp_algo_path, agg_fun
     
         # DP with H pruning + greedy pruning 
         dp3_results = {'time': 'NA', 'rows_removed': 'NA', 'mem_usage': 'NA'}
-        #dp3_results = run_algorithm(dp_command + ['--prune_h', '--prune_dp_by_greedy', greedy_prune], is_dp=True, timeout=timeout)
+        dp3_results = run_algorithm(dp_command + ['--prune_h', '--prune_dp_by_greedy', greedy_prune], is_dp=True, timeout=timeout)
         print(dp3_results)
         result_summary['dp_greedy+hprune_time'] = dp3_results['time']
         result_summary['dp_greedy+hprune_rows_removed'] = dp3_results['rows_removed']
@@ -143,7 +147,8 @@ def process_single_dataset(dataset_path, greedy_algo_path, dp_algo_path, agg_fun
     if aggpack_variations:
         # Agg pack prune by greedy
         dp4_results = {'time': 'NA', 'rows_removed': 'NA', 'mem_usage': 'NA'}
-        dp4_results = run_algorithm(dp_command + ['--prune_aggpack_by_greedy', greedy_prune], is_dp=True, timeout=timeout)
+        if num_rows >= skip_until:
+            dp4_results = run_algorithm(dp_command + ['--prune_aggpack_by_greedy', greedy_prune], is_dp=True, timeout=timeout)
         print(dp4_results)
         result_summary['dp_greedy_aggpack_prune_time'] = dp4_results['time']
         result_summary['dp_greedy_aggpack_prune_rows_removed'] = dp4_results['rows_removed']
@@ -152,8 +157,8 @@ def process_single_dataset(dataset_path, greedy_algo_path, dp_algo_path, agg_fun
         # Agg pack optimization (knapsack/histogram)
         # already run for sum
         dp5_results = {'time': 'NA', 'rows_removed': 'NA', 'mem_usage': 'NA'}
-        if num_rows>skip_until:
-            dp5_results = run_algorithm(dp_command + ['--agg_pack_opt'], is_dp=True, timeout=timeout)
+        #if num_rows>skip_until:
+        #dp5_results = run_algorithm(dp_command + ['--agg_pack_opt'], is_dp=True, timeout=timeout)
         print(dp5_results)
         result_summary['dp_aggpack_opt_time'] = dp5_results['time']
         result_summary['dp_aggpack_opt_rows_removed'] = dp5_results['rows_removed']
@@ -163,7 +168,7 @@ def process_single_dataset(dataset_path, greedy_algo_path, dp_algo_path, agg_fun
         # already run in DP_variations (naive)
         if agg_function.upper() in ('MEDIAN', 'AVG'):
             dp6_results = {'time': 'NA', 'rows_removed': 'NA', 'mem_usage': 'NA'}
-            dp6_results = run_algorithm(dp_command + ['--agg_pack_opt', '--prune_aggpack_by_greedy', greedy_prune], is_dp=True, timeout=timeout)
+            #dp6_results = run_algorithm(dp_command + ['--agg_pack_opt', '--prune_aggpack_by_greedy', greedy_prune], is_dp=True, timeout=timeout)
             print(dp6_results)
             result_summary['dp_aggpack_opt+greedy_aggpack_prune_time'] = dp6_results['time']
             result_summary['dp_aggpack_opt+greedy_aggpack_prune_rows_removed'] = dp6_results['rows_removed']
@@ -199,7 +204,7 @@ def fname_to_num_tuples(fname):
     if "_sample_" in fname:
         return int(fname.split("_sample_")[1].split("_")[0])
     else:
-        return int(fname.split("_r")[1].split("_v")[0])
+        return int(os.path.basename(fname).split("_r")[1].split("_v")[0])
 
 
 def process_datasets_serial(dataset_folder, greedy_algo_path, dp_algo_path, agg_function, timeout, results_folder, grouping_column="A", aggregation_column="B", output_folder="output"):
@@ -238,7 +243,7 @@ def compare_aggregations(dataset_folder, greedy_algo_path, dp_algo_path, timeout
         fname = os.path.basename(path)
 
         for agg in ["max", "median", "sum"]:
-               # , "avg"]:
+               # , "avg", "count", "count distinct"]:
             result = process_single_dataset(path, greedy_algo_path, dp_algo_path, agg, timeout,
                                 results_folder, grouping_column, aggregation_column, output_folder, 
                                 deduce_setting_from_agg=True)
