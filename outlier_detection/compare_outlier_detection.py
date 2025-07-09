@@ -36,6 +36,21 @@ def run_greedy(dataset_path, agg_func, grouping_col, agg_col, output_folder):
     }
 
 
+def compute_smvi(df_path, agg_func, grouping_col, agg_col):
+    df = pd.read_csv(df_path)
+    agg_values = df.groupby(grouping_col)[agg_col].agg(agg_func)
+    agg_values_sorted = agg_values.sort_index()
+    # Step 3: Compare each value with the next one
+    # comparison = agg_values_sorted.values[:-1] > agg_values_sorted.values[1:]
+    # # Step 4: Count how many times there is a violation
+    # count = comparison.sum()
+    # print(f"count of violations: {count}")
+    diffs = agg_values_sorted.values[1:] - agg_values_sorted.values[:-1]
+    positive_diffs = diffs[diffs > 0]
+    print(f"sum of violations: {sum(positive_diffs)}")
+    return sum(positive_diffs)
+
+
 def run_combination(dataset_path, agg_func, grouping_col, agg_col, output_folder, results, method_name, param, max_removal_pct, group_wise):
     print(f"Running outlier detection on {dataset_path} with {method_name} and param {param}")
 
@@ -89,6 +104,7 @@ def run_combination(dataset_path, agg_func, grouping_col, agg_col, output_folder
         "groupwise": group_wise,
         "outlier_rows_removed": outlier_rows_removed,
         "outlier_time": outlier_time,
+        "smvi_after_outlier_removal": compute_smvi(df_after_outlier_removal_path, agg_func, grouping_col, agg_col),
         "greedy_rows_removed":  greedy_results["rows_removed"],
         "greedy_time": greedy_results["greedy_time"],
         "total_rows_removed": outlier_rows_removed + greedy_results["rows_removed"],
@@ -178,11 +194,12 @@ def compare_removed_rows_overlap(dataset_path, agg_func, grouping_col, agg_col, 
     for _, row in filtered_results.iterrows():
         method = row['method']
         param = row['param']
-        group_wise = row['group_wise']
+        group_wise = row['groupwise']
         outlier_time = row['outlier_time']
         greedy_time_after_ol = row['greedy_time']
         outlier_rows_removed = row['outlier_rows_removed']
         greedy_rows_removed_after_ol = row['greedy_rows_removed']
+        smvi_after_ol = row['smvi_after_outlier_removal']
 
         # Path to the removed rows file for this outlier detection method
         if method == "knn":
@@ -234,6 +251,7 @@ def compare_removed_rows_overlap(dataset_path, agg_func, grouping_col, agg_col, 
                 'greedy_rows_removed_after_ol': greedy_rows_removed_after_ol,
                 'ol_total_rows_removed': ol_total_rows_removed,
                 'greedy_removed_count': greedy_removed_count,
+                'smvi_after_ol': smvi_after_ol,
                 'overlap_count(greedy vs ol alone)': overlap_count,
                 'overlap_pct_of_greedy': f"{overlap_pct_of_greedy:4f}",
                 'overlap_pct_of_ol': f"{overlap_pct_of_ol:4f}",
