@@ -8,6 +8,7 @@ from collections import Counter
 
 DEBUG = False
 
+
 def run_greedy(dataset_path, agg_func, grouping_col, agg_col, output_folder):
     greedy_command = [
         "python", "../aggr-main.py", dataset_path, agg_func,
@@ -33,6 +34,7 @@ def run_greedy(dataset_path, agg_func, grouping_col, agg_col, output_folder):
         "rows_removed": rows_removed,
         "greedy_time": greedy_time,
     }
+
 
 def run_combination(dataset_path, agg_func, grouping_col, agg_col, output_folder, results, method_name, param, max_removal_pct, group_wise):
     print(f"Running outlier detection on {dataset_path} with {method_name} and param {param}")
@@ -84,7 +86,7 @@ def run_combination(dataset_path, agg_func, grouping_col, agg_col, output_folder
         "max_removal_pct": max_removal_pct,
         "method": method_name,
         "param": param,
-        "group_wise": group_wise,
+        "groupwise": group_wise,
         "outlier_rows_removed": outlier_rows_removed,
         "outlier_time": outlier_time,
         "greedy_rows_removed":  greedy_results["rows_removed"],
@@ -100,7 +102,7 @@ def run_outlier_methods(dataset_path, agg_func, grouping_col, agg_col, output_fo
 
     z_score_values = [1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 5.0, 6.0]
     knn_neighbors_values = [3, 5, 8, 10]
-    isolation_contamination_values = [0.001 ,0.005 ,0.01, 0.05, 0.1, 0.2]
+    isolation_contamination_values = [0.001, 0.005, 0.01, 0.05, 0.1, 0.2]
 
     for group_wise in [False, True]:
         # z_score

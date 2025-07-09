@@ -7,8 +7,9 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 import matplotlib.pyplot as plt
 import argparse
 
-# Function to run an algorithm and measure rows removed and execution time
+
 def run_algorithm(command, is_dp=False, timeout=600):
+    """Run an algorithm and measure rows removed and execution time"""
     start_time = time.time()
     print(command)
     try:
