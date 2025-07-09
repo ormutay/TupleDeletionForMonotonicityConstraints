@@ -38,7 +38,8 @@ def run_greedy(dataset_path, agg_func, grouping_col, agg_col, output_folder):
 
 def compute_smvi(df_path, agg_func, grouping_col, agg_col):
     df = pd.read_csv(df_path)
-    agg_values = df.groupby(grouping_col)[agg_col].agg(agg_func)
+    agg_to_pandas = {'avg': 'mean', 'sum': 'sum', 'median': 'median', 'max': 'max'}
+    agg_values = df.groupby(grouping_col)[agg_col].agg(agg_to_pandas[agg_func])
     agg_values_sorted = agg_values.sort_index()
     # Step 3: Compare each value with the next one
     # comparison = agg_values_sorted.values[:-1] > agg_values_sorted.values[1:]
