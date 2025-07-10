@@ -47,7 +47,7 @@ def compute_smvi(df_path, agg_func, grouping_col, agg_col):
     # count = comparison.sum()
     # print(f"count of violations: {count}")
     diffs = agg_values_sorted.values[:-1] - agg_values_sorted.values[1:]
-    positive_diffs = diffs[diffs < 0]
+    positive_diffs = diffs[diffs > 0]
     print(f"sum of violations: {sum(positive_diffs)}")
     return sum(positive_diffs)
 
